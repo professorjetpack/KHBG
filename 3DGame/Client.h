@@ -17,6 +17,7 @@ namespace client {
 	enum packets {
 		p_disconnect,
 		p_position,
+		p_getPos,
 		p_players,
 		p_endPlayers
 	};
@@ -117,6 +118,9 @@ namespace client {
 	}
 	int getPos(std::vector<position> & pos) {
 		if (closed) return -4;
+		if (!FD_ISSET(sck_connection, &write)) return -5;
+		int packet = p_getPos;
+		sendInt(sck_connection, packet);
 		if (FD_ISSET(sck_connection, &read)) {
 			int packet = recvInt(sck_connection);
 			if (packet != p_players) {
