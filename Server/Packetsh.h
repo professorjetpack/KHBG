@@ -10,6 +10,7 @@ namespace server {
 	enum packets {
 		p_disconnect,
 		p_position,
+		p_getPos,
 		p_players,
 		p_endPlayers
 	};
@@ -103,27 +104,28 @@ namespace server {
 							players[i] = pos;
 							printf("Pos: %f, %f, %f \n", pos.x, pos.y, pos.z);
 						}
+						else if (packet == p_getPos) {
+							printf("get pos called! \n");
+							if (FD_ISSET(users[i], &writeFds)) {
+								for (auto it = players.begin(); it != players.end(); it++) {
+									ID user = it->first;
+									int packet = p_players;
+									sendInt(user, packet);
+									int size = players.size();
+									sendInt(user, size);
+									for (auto itt = players.begin(); itt != players.end(); itt++) {
+										position pos = itt->second;
+										sendData(reinterpret_cast<char*>(&pos.x), sizeof(float), user);
+										sendData(reinterpret_cast<char*>(&pos.y), sizeof(float), user);
+										sendData(reinterpret_cast<char*>(&pos.z), sizeof(float), user);
+										sendData(reinterpret_cast<char*>(&pos.yaw), sizeof(float), user);
+									}
+									packet = p_endPlayers;
+									sendInt(user, packet);
+								}
+							}
+						}
 					}
-				}
-			}
-//			select(0, NULL, &writeSck, NULL, NULL);
-			{
-				std::lock_guard<std::mutex> guard(mu);
-				for (auto it = players.begin(); it != players.end(); it++) {
-					ID user = it->first;
-					int packet = p_players;
-					sendInt(user, packet);
-					int size = players.size();
-					sendInt(user, size);
-					for (auto itt = players.begin(); itt != players.end(); itt++) {
-						position pos = itt->second;
-						sendData(reinterpret_cast<char*>(&pos.x), sizeof(float), user);
-						sendData(reinterpret_cast<char*>(&pos.y), sizeof(float), user);
-						sendData(reinterpret_cast<char*>(&pos.z), sizeof(float), user);
-						sendData(reinterpret_cast<char*>(&pos.yaw), sizeof(float), user);
-					}
-					packet = p_endPlayers;
-					sendInt(user, packet);
 				}
 			}
 		}
