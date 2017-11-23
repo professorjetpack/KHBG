@@ -1,0 +1,6 @@
+﻿  Main.cpp
+c:\users\stephen\documents\visual studio 2015\projects\3dgame\server\packetsh.h(61): warning C4018: '<': signed/unsigned mismatch
+c:\users\stephen\documents\visual studio 2015\projects\3dgame\server\packetsh.h(70): warning C4018: '<': signed/unsigned mismatch
+c:\users\stephen\documents\visual studio 2015\projects\3dgame\server\packetsh.h(138): warning C4101: 'clientAddr': unreferenced local variable
+  Server.vcxproj -> C:\Users\stephen\Documents\Visual Studio 2015\Projects\3DGame\Debug\Server.exe
+  Server.vcxproj -> C:\Users\stephen\Documents\Visual Studio 2015\Projects\3DGame\Debug\Server.pdb (Partial PDB)
