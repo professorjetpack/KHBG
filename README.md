@@ -1,2 +1,3 @@
 # KHBG
-this is a test
+Copyright © SEV 2017
+Battle royale in openGL
