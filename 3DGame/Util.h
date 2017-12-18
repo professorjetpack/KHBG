@@ -1,20 +1,30 @@
 #pragma once
 #include <glm.hpp>
 #include <gtc/matrix_transform.hpp>
-#define M_SMALL_NUM 0.00000001
-#define M_DEGENERATE -0xc786
-#define M_SAME_PLANE 0x8f42
-#define M_INTERSECT 0x78ecd
-#define M_NO_INTERSECT 0x63cd
-#define M_RAY_POS 0
-#define M_RAY_OFFSET 1
+#define M_C_SMALL_NUM 0.00000001
+#define M_C_DEGENERATE -0xc786
+#define M_C_SAME_PLANE 0x8f42
+#define M_C_INTERSECT 0x78ecd
+#define M_C_NO_INTERSECT 0x63cd
+#define M_C_LINE_INTERSECT 0x63dd
+#define M_C_RAY_POS 0
+#define M_C_RAY_OFFSET 1
+
+#define M_DISTANCE(p1, p2) (sqrt(pow((p1).x - (p2).x, 2) + pow((p1).y - (p2).y, 2) + pow((p1).z - (p2).z, 2)))
+#define M_CENTROID(TRIANGLE) (glm::vec3{((TRIANGLE)[0].x + (TRIANGLE)[1].x + (TRIANGLE)[2].x) / 3.0, \
+		((TRIANGLE)[0].y + (TRIANGLE)[1].y + (TRIANGLE)[2].y) / 3.0, \
+		((TRIANGLE)[0].z + (TRIANGLE)[1].z + (TRIANGLE)[2].z) / 3.0})
+#define M_TRGDISTANCE(TRIANGLE, VECTOR) (M_DISTANCE(M_CENTROID(TRIANGLE), (VECTOR)))
 struct BoundingBox {
 	glm::vec3 max;
 	glm::vec3 min;
 	bool operator[](const glm::vec3 & other) const {
-		if (other.x > min.x && other.x < max.x &&
-			other.y > min.y && other.y < max.y &&
-			other.z > min.z && other.z < min.z) {
+		glm::vec3 tmax = this->max - glm::vec3(-50, -3, -50);
+		glm::vec3 tmin = this->min - glm::vec3(-50, -3, -50);
+		glm::vec3 tother = other - glm::vec3(-50, -3, -50);
+		if ((tother.x > tmin.x && tother.x < tmax.x) &&
+			(tother.y > tmin.y && tother.y < tmax.y) &&
+			(tother.z > tmin.z && tother.z < tmax.z)) {
 			return true;
 		}
 		return false;
@@ -30,6 +40,7 @@ struct BoundingBox {
 		}
 		return false;
 	}
+	BoundingBox(glm::vec3 min, glm::vec3 max) : max(max), min(min){}
 };
 namespace GameMath {
 	glm::vec3 slerp(glm::vec3 start, glm::vec3 end, float percent) {
@@ -48,18 +59,18 @@ namespace GameMath {
 		v = triangle[2] - triangle[0];
 		n = glm::cross(u, v);
 		if (n == glm::vec3(0)) {
-			return M_DEGENERATE;
+			return M_C_DEGENERATE;
 		}
 		dir = ray[1] - ray[0];
 		w0 = ray[0] - triangle[0];
 		a = -glm::dot(n, w0);
 		b = glm::dot(n, dir);
-		if (fabs(b) < M_SMALL_NUM) {
-			if (a == 0) return M_SAME_PLANE;
-			else return M_NO_INTERSECT;
+		if (fabs(b) < M_C_SMALL_NUM) {
+			if (a == 0) return M_C_SAME_PLANE;
+			else return M_C_NO_INTERSECT;
 		}
 		r = a / b;
-		if (r < 0.0) return M_NO_INTERSECT;
+		if (r < 0.0) return M_C_NO_INTERSECT;
 		glm::vec3 intersect = ray[0] + r * dir;
 		float uu, uv, vv, wu, wv, D;
 		uu = glm::dot(u, u);
@@ -72,30 +83,41 @@ namespace GameMath {
 
 		float s, t;
 		s = (uv * wv - vv * wu) / D;
-		if (s < 0.0 || s > 1.0) return M_NO_INTERSECT;
+		if (s < 0.0 || s > 1.0) return M_C_NO_INTERSECT;
 		t = (uv * wu - uu * wv) / D;
-		if (t < 0.0 || (s + t) > 1.0) return M_NO_INTERSECT;
+		if (t < 0.0 || (s + t) > 1.0) return M_C_NO_INTERSECT;
 
-		return M_INTERSECT;
+		return M_C_INTERSECT;
 	}
-	bool rayTriangleCol2(glm::vec3 * ray, glm::vec3 * triangle) {
+	int rayTriangleCollision2(glm::vec3 * ray, glm::vec3 * triangle) {
 		glm::vec3 e1, e2, h, s, q;
 		float a, f, u, v, t;
 		e1 = triangle[1] - triangle[0];
 		e2 = triangle[2] - triangle[0];
 		h = glm::cross(ray[1], e2);
 		a = glm::dot(e1, h);
-		if (a > -0.0000001 && a < 0.0000001) return false;
+		if (a > -0.0000001 && a < 0.0000001) return M_C_NO_INTERSECT;
 		f = 1 / a;
 		s = ray[0] - triangle[0];
 		u = f * glm::dot(s, h);
-		if (u < 0.0 || u > 1.0) return false;
+		if (u < 0.0 || u > 1.0) return M_C_NO_INTERSECT;
 		q = glm::cross(s, e1);
 		v = f * glm::dot(ray[1], q);
-		if (v < 0.0 || v > 1.0) return false;
+		if (v < 0.0 || v > 1.0) return M_C_NO_INTERSECT;
 		t = f * glm::dot(e2, q);
-		if (t > 0.0000001) return false; //ray intersection
-		else return false; //line intersection and no ray intersection
+		if (t > 0.0000001) return M_C_INTERSECT; //ray intersection
+		else return M_C_LINE_INTERSECT; //line intersection and no ray intersection
 
+	}
+	glm::vec3 vectorMatrixMultiply(glm::vec3 vector, glm::mat4 matrix) {
+		glm::vec4 vec = glm::vec4(vector, 1.0);
+		glm::vec4 buffer;
+		for (int i = 0; i < 4; i+= 2) {
+			for (int j = 0; j < 4; j++) {
+				buffer[i] += matrix[i][j] * vec[j];
+				buffer[i + 1] += matrix[i + 1][j] * vec[j];
+			}
+		}
+		return glm::vec3(buffer);
 	}
 }

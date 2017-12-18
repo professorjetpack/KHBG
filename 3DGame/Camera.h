@@ -1,12 +1,19 @@
 #pragma once
 
-#include <glfw3.h>
 #include <glad/glad.h>
+#include <glfw3.h>
 #include <glm.hpp>
 #include <gtc/matrix_transform.hpp>
 
 #include <vector>
+#include "Util.h"
 #define BASE_JUMP_VEL 4.5f
+//#define TESTING
+#ifdef TESTING
+	#define FLY
+	#define HIGHSPEED
+	#define NOCLIP
+#endif
 //#define FLY
 namespace Game {
 	enum Camera_Movement {
@@ -22,15 +29,19 @@ namespace Game {
 
 	const float YAW = -90.0f;
 	const float PITCH = 0.0f;
-//	const float SPEED = 1.5f; when in actual game
-	const float SPEED = 3.5f;
+#ifdef HIGHSPEED
+	const float SPEED = 7.5f;
+#else
+	const float SPEED = 2.5f;
+#endif
 	const float SENSITIVTY = 0.1f;
 	const float ZOOM = 45.0f;
 
 	class Camera
 	{
 	private:
-		float yPos = 0;
+		float yPos = 0;		
+		Camera_Movement dir;
 	public:
 		glm::vec3 Position;
 		glm::vec3 Front;
@@ -40,6 +51,7 @@ namespace Game {
 		glm::vec3 Right;
 		glm::vec3 WorldUp;
 		float Yaw, b4LookYaw;
+		glm::vec3 oldPos;
 		float Pitch;
 		float MovementSpeed;
 		float MouseSensitivity;
@@ -50,12 +62,14 @@ namespace Game {
 		float Jump_Height = 2.2f;
 		double airTime;
 		float yJumpVel = BASE_JUMP_VEL;
+		bool move, fastMove, shouldPlay = false;
+		double moveTime = 0;
 
-		Camera(glm::vec3 position = glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f), float yaw = YAW, float pitch = PITCH) : Front(glm::vec3(0.0f, 0.0f, -1.0f)), MovementSpeed(SPEED), MouseSensitivity(SENSITIVTY), Zoom(ZOOM)
+		Camera(glm::vec3 position = glm::vec3(-27.0f, 0.0f, 0.0f), glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f), float yaw = YAW, float pitch = PITCH) : Front(glm::vec3(0.0f, 0.0f, -1.0f)), MovementSpeed(SPEED), MouseSensitivity(SENSITIVTY), Zoom(ZOOM)
 		{
 			Position = position;
 			WorldUp = up;
-			Yaw = yaw;
+			Yaw = yaw;	
 			Pitch = pitch;
 			look = false;
 			updateCameraVectors();
@@ -76,29 +90,61 @@ namespace Game {
 
 		void ProcessKeyboard(Camera_Movement direction, float deltaTime)
 		{
-
+			if(M_DISTANCE(Position, oldPos) > 1) oldPos = Position;
+			dir = direction;
 			float velocity = MovementSpeed * deltaTime;
-			if (direction == FORWARD)
+			if (direction == FORWARD) {
 				Position += walk * velocity;
-			if (direction == BACKWARD)
+				move = true; fastMove = false;
+			}
+			else if (direction == BACKWARD) {
 				Position -= walk * glm::vec3(velocity * 0.6);
-			if (direction == LEFT)
+				move = true; fastMove = false;
+			}
+			else if (direction == LEFT) {
 				Position -= Right * glm::vec3(velocity * 0.8);
-			if (direction == RIGHT)
+				move = true; fastMove = false;
+			}
+			else if (direction == RIGHT) {
 				Position += Right * glm::vec3(velocity * 0.8);
-			if (direction == FAST)
+				move = true; fastMove = false;
+			}
+			else if (direction == FAST) {
 				Position += walk * (velocity * 2);
-			if (direction == FRIGHT)
+				move = false; fastMove = true;
+			}
+			else if (direction == FRIGHT) {
 				Position += Right * glm::vec3(velocity * 1.6);
-			if (direction == FLEFT)
+				move = false; fastMove = true;
+			}
+			else if (direction == FLEFT) {
 				Position -= Right * glm::vec3(velocity * 1.6);
+				move = false; fastMove = true;
+			}
+			else {
+				move = false; fastMove = false;
+			}
 
 		}
-		void applyForces(float dt) {
+		void moveBack() {
+#ifndef NOCLIP
+			Position = oldPos;
+#endif
+		}
+		void applyForces(float dt, const std::vector<BoundingBox> & hitBoxes) {
+			if (Position.x <= -50) Position.x = -50;
+			else if (Position.x >= 50) Position.x = 50;
+			if (Position.z <= -50) Position.z = -50;
+			else if (Position.z >= 50) Position.z = 50;
 			if (jump) {
+				move = false; fastMove = false;
 				if (firstJump) {
+					shouldPlay = true;
 					firstJump = false;
 					airTime = glfwGetTime();
+				}
+				else {
+					shouldPlay = false;
 				}
 				yJumpVel -= 0.3 * dt * 20;
 				Position.y += yJumpVel * dt;
@@ -106,17 +152,45 @@ namespace Game {
 #ifndef FLY
 			else if (Position.y > -2.5) {
 				Position.y -= 0.3 * dt * 20;
-
-
 			}
 #endif
+#ifndef NOCLIP
 			if (Position.y < -2.5) {
+				if (jump) shouldPlay = true;
+				else shouldPlay = false;
 				Position.y += 0.3 * dt * 20;
 				yJumpVel = BASE_JUMP_VEL;
 				airTime = glfwGetTime();
 				firstJump = true;
 				jump = false;
 			}
+			for (int i = 0; i < hitBoxes.size(); i++) {
+				glm::vec3 min = hitBoxes[i].min;
+				glm::vec3 max = hitBoxes[i].max;
+				if (hitBoxes[i][Position]) {
+					firstJump = true;
+					jump = false;
+					yJumpVel = BASE_JUMP_VEL;
+//					Position = oldPos;
+/*					if (Position.x > min.x && Position.x <= max.x - ((max.x - min.x) / 2.0)) Position.x = min.x;
+					else if (Position.x > min.x + ((max.x - min.x) / 2.0) && Position.x < max.x) Position.x = max.x;
+					else if (Position.z > min.z && Position.z <= max.z - ((max.z - min.z) / 2.0)) Position.z = min.z;
+					else if (Position.z > min.z + ((max.z - min.z) / 2.0) && Position.z < max.z) Position.z = max.z;
+					else if (Position.y > min.y && Position.y <= max.y - ((max.y - min.y) / 2.0)) Position.y = min.y;
+					else if (Position.y > min.y + ((max.y - min.y) / 2.0) && Position.y < max.y) Position.y = max.y;
+					*/
+					glm::vec3 checkPos = Position;
+					if (oldPos.y - 0.5 >= max.y) Position.y = max.y;
+					else if (oldPos.y <= min.y) Position.y = min.y;
+					if (oldPos.x <= min.x) Position.x = min.x;
+					else if (oldPos.x >= max.x) Position.x = max.x;
+					if (oldPos.z <= min.z) Position.z = min.z;
+					else if (oldPos.z >= max.z) Position.z = max.z;
+					if (Position == checkPos) Position = oldPos;
+				}
+			}
+			
+#endif
 		}
 
 		void ProcessMouseMovement(float xoffset, float yoffset, GLboolean constrainPitch = true)
@@ -170,8 +244,9 @@ namespace Game {
 				walk = Front;
 #ifndef FLY
 				walk.y = 0;
-			}
 #endif
+			}
+
 			Right = glm::normalize(glm::cross(Front, WorldUp));  
 			Up = glm::normalize(glm::cross(Right, Front));
 		}

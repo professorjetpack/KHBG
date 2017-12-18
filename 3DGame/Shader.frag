@@ -1,4 +1,4 @@
-#version 440 core
+#version 330 core
 out vec4 FragColor;
 
 in VS_OUT{
@@ -27,17 +27,14 @@ float linearizeDepth(float depth){
 	return (2.0 * near_plane * far_plane) / (far_plane + near_plane - z * (far_plane - near_plane));
 
 }
-float shadowCalculation(vec4 fragPosLightSpace)
+float shadowCalculation(vec4 fragPosLightSpace, vec3 normal)
 {
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
     projCoords = projCoords * 0.5 + 0.5;
     float closestDepth = texture(shadowMap, projCoords.xy).r;
-//	closestDepth = linearizeDepth(closestDepth) / far_plane;
     float currentDepth = projCoords.z;
-//	currentDepth = linearizeDepth(currentDepth) / far_plane;
-	vec3 normal = normalize(fs_in.normal);
-    vec3 lightDir = normalize(lightPos - fs_in.fragPos);
-    float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);
+	vec3 lightDir = normalize(lightPos - fs_in.fragPos);
+	float bias = 0.0008; //max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);;
     float shadow = 0.0;
     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
     for(int x = -1; x <= 1; ++x)
@@ -49,10 +46,9 @@ float shadowCalculation(vec4 fragPosLightSpace)
         }    
     }
     shadow /= 9.0;
-    
     if(projCoords.z > 1.0)
         shadow = 0.0;
-        
+     
     return shadow;
 }
 
@@ -85,7 +81,7 @@ void main()
 	}else{
 		specular = spec * lightColor;  
 	}     
-    float shadow = shadowCalculation(fs_in.fragPosLightSpace);                  
+    float shadow = shadowCalculation(fs_in.fragPosLightSpace, normal);                  
     vec3 lighting = (ambient + (1.0 - shadow) * (diffuse + specular)) * color.rgb;
 
 

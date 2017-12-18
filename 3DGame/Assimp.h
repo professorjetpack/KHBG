@@ -70,14 +70,16 @@ namespace Game {
 				}
 				else if (name == "textures_normal") {
 					stream << normalNr++;
+//					continue;
 					shader.setInt("normalMap", i);
+//					printf("Normal identified: %s\n", textures[i].path.C_Str());
 				}
 				number = stream.str(); 
 
 				shader.setFloat(("material." + name + number).c_str(), i); 
 				glBindTexture(GL_TEXTURE_2D, textures[i].id);
 			}
-			glActiveTexture(GL_TEXTURE1);
+//			glActiveTexture(GL_TEXTURE1);
 
 			glBindVertexArray(VAO);
 			glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
@@ -111,7 +113,8 @@ namespace Game {
 	};
 	class Model {
 	public:
-		std::vector<std::vector<glm::vec4>> triangles;
+		std::vector<std::vector<glm::vec3>> points;
+		std::vector<std::vector<unsigned int>> ids;
 	public:
 		Model(char * path) {
 			loadModel(path);
@@ -160,6 +163,8 @@ namespace Game {
 			std::vector<Vertex> vertices;
 			std::vector<unsigned int> indices;
 			std::vector<Texture> textures;
+			std::vector<glm::vec3> nodes;
+			std::vector<unsigned int> nodeIds;
 			for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
 				Vertex vertex;
 				glm::vec3 vector;
@@ -167,18 +172,19 @@ namespace Game {
 				vector.y = mesh->mVertices[i].y;
 				vector.z = mesh->mVertices[i].z;
 				vertex.position = vector;
+//				points.push_back(vector);
 				if (mesh->mNormals != NULL) {
 					vector.x = mesh->mNormals[i].x;
 					vector.y = mesh->mNormals[i].y;
 					vector.z = mesh->mNormals[i].z;
 					vertex.normal = vector;
 				}
-
-/*				vector.x = mesh->mTangents[i].x;
-				vector.y = mesh->mTangents[i].y;
-				vector.z = mesh->mTangents[i].z;
-				vertex.tangent = vector;
-				*/
+				if (mesh->mTangents != NULL) {
+					vector.x = mesh->mTangents[i].x;
+					vector.y = mesh->mTangents[i].y;
+					vector.z = mesh->mTangents[i].z;
+					vertex.tangent = vector;
+				} 
 				if (mesh->mTextureCoords[0]) { 
 											   
 					glm::vec2 vec;
@@ -191,17 +197,15 @@ namespace Game {
 					vertex.texCoords = glm::vec2(0.0f);
 				}
 				vertices.push_back(vertex);
+				nodes.push_back(vertex.position); 
 			}
 			for (unsigned int i = 0; i < mesh->mNumFaces; i++) {
 				aiFace face = mesh->mFaces[i];
-				std::vector<glm::vec4> vec;
 				for (unsigned int j = 0; j < face.mNumIndices; j++) {
 					indices.push_back(face.mIndices[j]);
-					vec.push_back(glm::vec4(vertices[face.mIndices[j]].position, 0));
-
-					
+					nodeIds.push_back(face.mIndices[j]);
+//					points.push_back(vertices[face.mIndices[j]].position);
 				}
-				triangles.push_back(vec);
 			}
 			if (mesh->mMaterialIndex >= 0) {
 				aiMaterial * material = scene->mMaterials[mesh->mMaterialIndex];
@@ -212,6 +216,8 @@ namespace Game {
 				std::vector<Texture> normalMaps = loadMaterialTextures(material, aiTextureType_HEIGHT, "textures_normal");
 				textures.insert(textures.end(), normalMaps.begin(), normalMaps.end());
 			}
+			points.push_back(nodes);
+			ids.push_back(nodeIds);
 			return Mesh(vertices, indices, textures);
 		}
 
@@ -219,6 +225,7 @@ namespace Game {
 		{
 			std::string filename = std::string(path);
 			filename = directory + '/' + filename;
+			printf("Texture: %s \n", filename.c_str());
 
 			unsigned int textureID;
 			glGenTextures(1, &textureID);
