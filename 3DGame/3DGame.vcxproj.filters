@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\Graphics Notes\Graphics Notes\glad.c">
+    <ClCompile Include="GameMain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="GameMain.cpp">
+    <ClCompile Include="..\..\Graphics Notes\Graphics Notes\glad.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -44,13 +44,26 @@
     <ClInclude Include="Client.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Ringbuffer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Arrow.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="c_Time.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shader.glsl" />
     <None Include="Shader.frag" />
-    <None Include="sky.glsl" />
     <None Include="sky.frag" />
     <None Include="fbo.glsl" />
     <None Include="fbo.frag" />
+    <None Include="depth.glsl" />
+    <None Include="depth.frag" />
+    <None Include="simple.glsl" />
+    <None Include="simple.frag" />
+    <None Include="sky.glsl" />
   </ItemGroup>
 </Project>

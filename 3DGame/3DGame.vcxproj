@@ -69,18 +69,20 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <IncludePath>C:\Users\stephen\Desktop\coding stuff\Glad\include;C:\Users\stephen\Desktop\coding stuff\glm-0.9.8.4\glm;C:\Users\stephen\Desktop\coding stuff\glfw-3.2.1.bin.WIN32\include\GLFW;C:\Users\stephen\Desktop\coding stuff\Assimp\include\assimp;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\stephen\Desktop\coding stuff\glfw-3.2.1.bin.WIN32\lib-vc2015;C:\Users\stephen\Desktop\coding stuff\Assimp\lib\x86;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Users\stephen\Desktop\coding stuff\irrKlang-32bit-1.5.0\irrKlang-1.5.0\include;C:\Program Files %28x86%29\GnuWin32\include\freetype2;C:\Users\stephen\Desktop\coding stuff\Glad\include;C:\Users\stephen\Desktop\coding stuff\glm-0.9.8.4\glm;C:\Users\stephen\Desktop\coding stuff\glfw-3.2.1.bin.WIN32\include\GLFW;C:\Users\stephen\Desktop\coding stuff\Assimp\include\assimp;C:\Program Files %28x86%29\GnuWin32\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\stephen\Desktop\coding stuff\irrKlang-32bit-1.5.0\irrKlang-1.5.0\lib\Win32-visualStudio;C:\Program Files %28x86%29\GnuWin32\lib;C:\Users\stephen\Desktop\coding stuff\glfw-3.2.1.bin.WIN32\lib-vc2015;C:\Users\stephen\Desktop\coding stuff\Assimp\lib\x86;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>opengl32.lib;glfw3.lib;assimp.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opengl32.lib;glfw3.lib;assimp.lib;Ws2_32.lib;freetype.lib;winmm.lib;irrKlang.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <Bscmake />
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -120,19 +122,26 @@
     <ClCompile Include="GameMain.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Arrow.h" />
     <ClInclude Include="Assimp.h" />
     <ClInclude Include="Camera.h" />
     <ClInclude Include="Client.h" />
+    <ClInclude Include="c_Time.h" />
+    <ClInclude Include="Ringbuffer.h" />
     <ClInclude Include="Scene.h" />
     <ClInclude Include="Shader.h" />
     <ClInclude Include="stb_image.h" />
     <ClInclude Include="Util.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="depth.frag" />
+    <None Include="depth.glsl" />
     <None Include="fbo.frag" />
     <None Include="fbo.glsl" />
     <None Include="Shader.frag" />
     <None Include="Shader.glsl" />
+    <None Include="simple.frag" />
+    <None Include="simple.glsl" />
     <None Include="sky.frag" />
     <None Include="sky.glsl" />
   </ItemGroup>
