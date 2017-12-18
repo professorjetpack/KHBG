@@ -394,7 +394,7 @@ namespace server {
 								printf("Ally opcode with name %s \n", name.c_str());
 //								if (partners[i] == MAP_NULL || partners.count(i) == 0) {
 									for (auto it = names.begin(); it != names.end(); it++) {
-										if ((*it).second == name) {
+										if ((*it).second == name && (*it).first != i) {
 											printf("Player exists \n");
 											printf("Partnering %d with %d. Partners size: %d \n", i, (*it).first, partners.size());
 	//										if (partners[i] == MAP_NULL) partners[i] = (*it).first;
