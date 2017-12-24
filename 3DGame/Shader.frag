@@ -22,6 +22,8 @@ uniform float near_plane;
 uniform bool useNormal;
 uniform bool useSpecular;
 
+uniform bool medium;
+
 float linearizeDepth(float depth){
 	float z = depth * 2.0 - 1.0; //convert to NDC
 	return (2.0 * near_plane * far_plane) / (far_plane + near_plane - z * (far_plane - near_plane));
@@ -34,7 +36,7 @@ float shadowCalculation(vec4 fragPosLightSpace, vec3 normal)
     float closestDepth = texture(shadowMap, projCoords.xy).r;
     float currentDepth = projCoords.z;
 	vec3 lightDir = normalize(lightPos - fs_in.fragPos);
-	float bias = 0.0008; //max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);;
+	float bias = 0.002; //max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);;
     float shadow = 0.0;
     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
     for(int x = -1; x <= 1; ++x)
@@ -57,6 +59,7 @@ void main()
 	vec4 color = texture(diffuseTex, fs_in.texCoord);
 	if(color.a < 0.1)
 		discard;
+	if((medium && distance(viewPos, fs_in.fragPos) < 20) || !medium){
 	vec3 normal;
 	if(useNormal){
 		normal = texture(normalMap, fs_in.texCoord).rgb;
@@ -86,4 +89,7 @@ void main()
 
 
     FragColor = vec4(lighting, 1.0);
+	}else{
+		FragColor = vec4(color.rgb * 0.2, 1.0);
+	}
 }

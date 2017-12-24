@@ -120,4 +120,5 @@ namespace GameMath {
 		}
 		return glm::vec3(buffer);
 	}
+#define VECTOR_MATRIX_MULTIPLY(flArray3, flArray16) (vectorMatrixMultiply(glm::vec3((flArray3)[0], (flArray3)[1], (flArray3)[2]), glm::mat4((flArray16)[0], (flArray16)[1],(flArray16)[2],(flArray16)[3],(flArray16)[4],(flArray16)[5],(flArray16)[6],(flArray16)[7],(flArray16)[8],(flArray16)[9],(flArray16)[10],(flArray16)[11],(flArray16)[12],(flArray16)[13],(flArray16)[14],(flArray16)[15])))
 }

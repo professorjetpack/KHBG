@@ -1,5 +1,3 @@
-#define SCR_WIDTH 1920
-#define SCR_HEIGHT 1080
 #define _WINSOCKAPI_
 #include <Windows.h>
 #include "Scene.h"
@@ -15,7 +13,7 @@ using namespace Game;
 #define SCR_QUAD_SIZE 1.01f
 	bool firstMouse = true, addArrow = false;
 	double lastMX, lastMY;
-	float deltaTime = 0, lastTime = 0;
+	double deltaTime = 0, lastTime = 0;
 	Camera cam;
 	Scene * scene;
 	unsigned int quadVAO = 0;
@@ -34,6 +32,10 @@ using namespace Game;
 	double lastKey = 0;
 	int fps = 0;
 	bool sendCommand;
+	int SCR_WIDTH, SCR_HEIGHT;
+	int graphics;
+	bool fullscreen;
+	float volume;
 	void renderQuad()
 	{
 		if (quadVAO == 0)
@@ -299,6 +301,13 @@ using namespace Game;
 		memcpy_s(data, size, oldData, size);
 		delete[] oldData;
 	}
+	void lowerVolume(byte * data, int size, double percent) {
+		int sampleCount = (size - 40) / sizeof(int16_t);
+		int16_t * samp = (int16_t *)&(data[44]);
+		for (int i = 0; i < sampleCount; i++) {
+			samp[i] = (int16_t)(samp[i] * percent);
+		}
+	}
 	void seekPosition(byte * data, int size, int second, int totalSeconds, byte ** newData) {
 		byte * dataOffset = (byte*)&data[44];
 		byte * end = (byte*)&data[size - 1];
@@ -314,17 +323,85 @@ using namespace Game;
 
 
 	}
+	void readSettings() {
+		std::ifstream in;
+		in.open("settings.set", std::ios::binary);
+		if (in.is_open()) {
+			in.read((char*)&graphics, sizeof(int));
+			in.read((char*)&fullscreen, sizeof(bool));
+			int buf;
+			in.read((char*)&buf, sizeof(int));
+			in.read((char*)&SCR_WIDTH, sizeof(int));
+			in.read((char*)&SCR_HEIGHT, sizeof(int));
+			in.read((char*)&volume, sizeof(float));
+			in.close();
+
+			if(graphics == 0) graphics = 1;
+			printf("Graphics: %d \n", graphics);
+			printf("Fullscreen: %d \n", fullscreen);
+			printf("Width: %d Height %d\n", SCR_WIDTH, SCR_HEIGHT);
+			printf("Volume: %f \n", volume);
+
+		}
+		else
+			MessageBox(NULL, "Error reading settings!", "", MB_OK | MB_ICONERROR);
+	}
+	char * username;
+	char * ip;
+	void readLogin() {
+		std::ifstream in;
+		in.open("login.set", std::ios::binary);
+		if (in.is_open()) {
+			int size;
+			in.read((char*)&size, sizeof(int));
+			username = new char[size + 1];
+			in.read(username, size);
+			username[size] = '\0';
+			in.read((char*)&size, sizeof(int));
+			ip = new char[size + 1];
+			in.read(ip, size);
+			ip[size] = '\0';
+			printf("Read user: %s  Read ip: %s \n", username, ip);
+			in.close();
+
+		}
+		else
+			MessageBox(NULL, "Error reading login.set!", "", MB_OK | MB_ICONERROR);
+	}
 #pragma endregion
 	int main() {
+		readSettings();
+		readLogin();
+		FILE * feula;
+		fopen_s(&feula, "eula.db", "rb");
+		bool accepted;
+		if (feula != NULL) {
+			fread((char*)&accepted, sizeof(bool), 1, feula);
+			fclose(feula);
+		}
+		else {
+			MessageBox(NULL, "You must agree to the eula!", "KFBR", MB_OK | MB_ICONERROR);
+			return 1;
+		}
+		if (!accepted || feula == NULL) {
+			MessageBox(NULL, "You must agree to the eula!", "KFBR", MB_OK | MB_ICONERROR);
+			return 2;
+		}
 		glfwInit();
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 		//this pc supports 4.4, set it to 3.3, the earliest version we can support to allow more ppl to play it
-		glfwWindowHint(GLFW_SAMPLES, 4);
+		if (graphics == 2)
+			glfwWindowHint(GLFW_SAMPLES, 4);
+		else
+			glfwWindowHint(GLFW_SAMPLES, 2);
 		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 //		glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); need this line in case of need to compile for Mac
-		GLFWwindow * window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Archer Game", NULL, NULL);
-//		GLFWwindow * window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Archer Game", glfwGetPrimaryMonitor(), NULL); fullscreen
+		GLFWwindow * window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "KFBR Game", NULL, NULL);
+		if (fullscreen) {
+			printf("Fullscreen \n");
+			glfwSetWindowMonitor(window, glfwGetPrimaryMonitor(), 0, 0, SCR_WIDTH, SCR_HEIGHT, GLFW_DONT_CARE);
+		}
 		if (window == NULL) {
 			printf("Failed to create window\n");
 			glfwTerminate();
@@ -345,40 +422,47 @@ using namespace Game;
 		glfwSetMouseButtonCallback(window, mouseButtonCallback);
 
 		glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
-		glEnable(GL_MULTISAMPLE);
+		if(graphics)
+			glEnable(GL_MULTISAMPLE);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glEnable(GL_DEPTH_TEST);
 		glEnable(GL_PROGRAM_POINT_SIZE);
-
-		Shader depthShader("depth.glsl", "depth.frag");
-		Shader shader("Shader.glsl", "Shader.frag");
-		Shader skyBoxShader("sky.glsl", "sky.frag");
-		Shader hdrFrame("fbo.glsl", "fbo.frag");
+		
+		Shader depthShader("depth.glslbin", "depth.fragbin", true);
+		Shader * shader;
+		if (graphics == 0) shader = new Shader("Shader.glslbin", "ShaderLow.fragbin", true);
+		else shader = new Shader("Shader.glslbin", "Shader.fragbin", true);
+		Shader skyBoxShader("sky.glslbin", "sky.fragbin", true);
+		Shader hdrFrame("fbo.glslbin", "fbo.fragbin", true);
 		Skybox sky("sandcastle");
-		scene = sceneFactory(0);
 		float red = 1.5;
 		float clearTimes = 1;
 
 		irrklang::ISoundEngine * mainEngine = irrklang::createIrrKlangDevice();
 #pragma region FrameBuffers
-		const unsigned int SHADOW_WIDTH = 12560, SHADOW_HEIGHT = 12560;
+		unsigned int SHADOW_WIDTH = 12560, SHADOW_HEIGHT = 12560;
+		if (graphics == 1 || graphics == 0) {
+			SHADOW_WIDTH = 2560; SHADOW_HEIGHT = 2560;
+		}
 		unsigned int depthMatFramebuffer, depthTexture;
-		glGenFramebuffers(1, &depthMatFramebuffer);
-		glGenTextures(1, &depthTexture);
-		glBindTexture(GL_TEXTURE_2D, depthTexture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-		float borderColor[] = { 1.0, 1.0, 1.0, 1.0 };
-		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
-		glBindFramebuffer(GL_FRAMEBUFFER, depthMatFramebuffer);
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTexture, 0);
-		glDrawBuffer(GL_NONE); //not using draw or read, this is simply for depth
-		glReadBuffer(GL_NONE);
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+//		if (graphics) {
+			glGenFramebuffers(1, &depthMatFramebuffer);
+			glGenTextures(1, &depthTexture);
+			glBindTexture(GL_TEXTURE_2D, depthTexture);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+			float borderColor[] = { 1.0, 1.0, 1.0, 1.0 };
+			glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+			glBindFramebuffer(GL_FRAMEBUFFER, depthMatFramebuffer);
+			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTexture, 0);
+			glDrawBuffer(GL_NONE); //not using draw or read, this is simply for depth
+			glReadBuffer(GL_NONE);
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+//		}
 
 		unsigned int hdrFrameBuffer, hdrTexture, hdrRenderBufferDepth;
 		glGenFramebuffers(1, &hdrFrameBuffer);
@@ -406,18 +490,20 @@ using namespace Game;
 		hdrFrame.use();
 		hdrFrame.setInt("hdrBuffer", 0);
 		hdrFrame.setInt("text", 1);
-		shader.use();
-		shader.setInt("shadowMap", 0);
-		shader.setInt("diffuseTex", 1);
-		shader.setInt("normalMap", 2);
-		shader.setInt("specularMap", 3);
-		shader.setBool("useNormal", false);
-		shader.setBool("useSpecular", false);
+		shader->use();
+		shader->setInt("shadowMap", 0);
+		shader->setInt("diffuseTex", 1);
+		shader->setInt("normalMap", 2);
+		shader->setInt("specularMap", 3);
+		shader->setBool("useNormal", false);
+		shader->setBool("useSpecular", false);
 		float near_plane = 30.0f, far_plane = 120.0f;
-		shader.setFloat("near_plane", near_plane);
-		shader.setFloat("far_plane", far_plane);
-		client::startup("127.0.0.1");
-		client::sendName("Rex");
+		shader->setFloat("near_plane", near_plane);
+		shader->setFloat("far_plane", far_plane);
+		client::startup(ip);
+		client::sendName(username);
+		client::startLoop();
+		scene = sceneFactory(0);
 
 
 		createBuffers();
@@ -426,37 +512,45 @@ using namespace Game;
 		byte * newIntense;
 		unsigned int intenseSize;
 		loadSound("Assets/sounds/timeLeft.wav", &intense, intenseSize);
+		lowerVolume(intense, intenseSize, volume);
 		bool once = false;
 		bool heartBeat = false;
 		float frames = 1;
 		double fpsChange = 0;
-		auto x = glm::vec4(1, 2, 3, 4);
-		auto y = glm::mat4(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
-		glm::vec3 result = GameMath::vectorMatrixMultiply(x, y);
-		printf("result: %f, %f, %f \n", result.x, result.y, result.z);
 #pragma region GameLoop
+		double time;
 		while (!glfwWindowShouldClose(window)) {
-			deltaTime = glfwGetTime() - lastTime;
-			lastTime = glfwGetTime();
+			if (!client::getServerTime(time)) {
+				time = glfwGetTime();
+			}
+			deltaTime = time - lastTime;
+			lastTime = time;
 			client::startLoop();
-			glClearColor(0.f, 0.f, 0.f, 1.0f);
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			glm::mat4 lightProj, lightView, lightSpaceTransform;
-			lightProj = glm::ortho(-50.0f, 50.0f, -50.0f, 50.0f, near_plane, far_plane); 
-//			lightProj = glm::perspective(45.0f, (float)SHADOW_WIDTH / SHADOW_HEIGHT, near_plane, far_plane);
-			lightView = glm::lookAt(sunPos, glm::vec3(0), glm::vec3(0.0f, 1.0f, 0.0f));
-			lightSpaceTransform = lightProj * lightView;
-			depthShader.use();
-			depthShader.setMat4("lightSpaceMat", lightSpaceTransform);
-			glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
-			glBindFramebuffer(GL_FRAMEBUFFER, depthMatFramebuffer);
-			glClear(GL_DEPTH_BUFFER_BIT);
-			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, depthTexture);
-			scene->renderScene(depthShader, true, cam, deltaTime);
+//			if (graphics) {
+				glClearColor(0.f, 0.f, 0.f, 1.0f);
+				glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+				if (graphics == 2) {
+					lightProj = glm::ortho(-50.0f, 50.0f, -50.0f, 50.0f, near_plane, far_plane);
+					//			lightProj = glm::perspective(45.0f, (float)SHADOW_WIDTH / SHADOW_HEIGHT, near_plane, far_plane);
+					lightView = glm::lookAt(sunPos, glm::vec3(0), glm::vec3(0.0f, 1.0f, 0.0f));
+				}
+				else {
+					lightProj = glm::ortho(-30.0f, 30.0f, -30.0f, 30.0f, near_plane, far_plane);
+					lightView = glm::lookAt(sunPos, cam.Position, glm::vec3(0.f, 1.f, 0.f));
+				}
+				lightSpaceTransform = lightProj * lightView;
+				depthShader.use();
+				depthShader.setMat4("lightSpaceMat", lightSpaceTransform);
+				glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+				glBindFramebuffer(GL_FRAMEBUFFER, depthMatFramebuffer);
+				glClear(GL_DEPTH_BUFFER_BIT);
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, depthTexture);
+				scene->renderScene(depthShader, true, cam, deltaTime, graphics);				
+//			}
 			glBindFramebuffer(GL_FRAMEBUFFER, hdrFrameBuffer);
-
-			glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
+			glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);			
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			glm::mat4 projection = glm::perspective(45.0f, (float)SCR_WIDTH / SCR_HEIGHT, 0.1f, 200.0f);
 			glm::mat4 view = cam.GetViewMatrix();
@@ -464,17 +558,21 @@ using namespace Game;
 			skyBoxShader.setMat4("view", glm::mat4(glm::mat3(view)));
 			skyBoxShader.setMat4("projection", projection);
 			sky.draw();
-			shader.use();
-			shader.setMat4("projection", projection);
-			shader.setMat4("view", view);
-			shader.setVec3("viewPos", cam.Position);
-			shader.setVec3("lightPos", sunPos);
-			shader.setMat4("lightSpaceMatrix", lightSpaceTransform);
-			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, depthTexture);
+			shader->use();
+			shader->setMat4("projection", projection);
+			shader->setMat4("view", view);
+			shader->setVec3("viewPos", cam.Position);
+			shader->setVec3("lightPos", sunPos);
+//			if (graphics) {
+				shader->setMat4("lightSpaceMatrix", lightSpaceTransform);
+//			}
+//			if (graphics) {
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, depthTexture);
+//			}
 			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, groundTexture);
-			scene->renderScene(shader, false, cam, deltaTime, view, projection);
+			scene->renderScene(*shader, false, cam, deltaTime, graphics, view, projection);
 //			printf("Pos: %f, %f, %f \n", cam.Position.x, cam.Position.y, cam.Position.z);
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -490,7 +588,7 @@ using namespace Game;
 				winner = true;
 			}
 			else if (time.minutes == 1 && time.seconds == 21) {
-				PlaySound("Assets/sounds/timeLeft.wav", NULL, SND_FILENAME | SND_ASYNC);
+				PlaySound((LPCSTR)intense, NULL, SND_MEMORY | SND_ASYNC);
 				playing = true;
 			}
 			else if (!playing) {
@@ -595,14 +693,19 @@ using namespace Game;
 					if (GetKeyState('F') < 0) scene->setHealth(120);
 				}
 				else if (M_DISTANCE(glm::vec3(-33, -2, 20), cam.Position + cam.Front) < 1.7) {
-					renderText(hdrFrame, "Press e to climb tower", SCR_WIDTH / 3, SCR_HEIGHT / 2, SCR_WIDTH / 1920.0, glm::vec3(1));
-					if (GetKeyState('E') < 0) cam.Position = glm::vec3(-29, 6.2, 20); cam.oldPos = cam.Position;
+					renderText(hdrFrame, "Press f to climb tower", SCR_WIDTH / 3, SCR_HEIGHT / 2, SCR_WIDTH / 1920.0, glm::vec3(1));
+					if (GetKeyState('F') < 0) cam.Position = glm::vec3(-29, 6.2, 20); cam.oldPos = cam.Position;
 				}
 				if (typing) {
 					std::lock_guard<std::mutex> guard(mu);
 					std::string buffer = "/";
 					buffer.append(command);
-					renderText(hdrFrame, buffer, SCR_WIDTH / 12.0, SCR_HEIGHT / 12.0, SCR_HEIGHT / 2160.0, glm::vec3(1));
+					renderText(hdrFrame, buffer, SCR_WIDTH / 20.0, SCR_HEIGHT / 12.0, SCR_HEIGHT / 2160.0, glm::vec3(1));
+				}
+				char * name;
+				if (client::getName(&name) == 0) {
+					renderText(hdrFrame, name, SCR_WIDTH / 20.0, SCR_HEIGHT / 20.0, SCR_HEIGHT / 1080.0, glm::vec3(1, 1, 0));
+					delete[] name;
 				}
 				
 			}
@@ -649,6 +752,9 @@ using namespace Game;
 			frames++;
 		}
 #pragma endregion
+		delete shader;
+		delete[] ip;
+		delete[] username;
 		delete[] intense;
 //		if(newIntense != NULL) delete[] newIntense;
 		delete scene;
@@ -656,8 +762,5 @@ using namespace Game;
 		getchar();
 
 		return 0;
-
-
-
 
 	}

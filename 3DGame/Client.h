@@ -27,8 +27,12 @@ struct position {
 struct arrow_packet {
 	float x, y, z;
 	float velX, velY, velZ;
+	double startClock;
 	double clock;
 	int shooter;
+	unsigned long long arrowId;
+	bool newShot;
+	bool isLive;
 };
 namespace client {
 	typedef int Packet;
@@ -47,7 +51,7 @@ namespace client {
 		p_getPos,
 		p_players,
 		p_endPlayers,
-		p_sendArrow,
+		p_getArrowId,
 		p_finishSendArrow,
 		p_getNewArrows,
 		p_arrows,
@@ -57,7 +61,12 @@ namespace client {
 		p_getLeader,
 		p_name,
 		p_getTime,
-		p_command
+		p_command,
+		p_getName,
+		p_getTimeNow,
+		p_sendExistingArrow,
+		p_getPid,
+		p_disableArrow
 	};
 	int disconnectClient(SOCKET sck) {
 		if (closed) return SCK_CLOSED;
@@ -73,7 +82,7 @@ namespace client {
 		closesocket(sck);
 		closed = true;
 		WSACleanup();
-		return sck;
+		return SCK_CLOSED;
 	}
 	void shutdown() {
 		if(!closed) disconnectClient(sck_connection);
@@ -148,12 +157,12 @@ namespace client {
 			printf("sent command! %s \n", command.c_str());
 		}
 	}
-	void sendName(std::string name) {
+	void sendName(char * name) {
 		if (FD_ISSET(sck_connection, &write)) {
 			Packet packet = p_name;
 			sendInt(sck_connection, packet);
-			sendInt(sck_connection, name.size());
-			sendData((char*)name.c_str(), name.size(), sck_connection);
+			sendInt(sck_connection, strlen(name));
+			sendData(name, strlen(name), sck_connection);
 		}
 	}
 	void startLoop() {
@@ -180,10 +189,33 @@ namespace client {
 		}
 		return 0;
 	}
-	int sendNewArrow(const arrow_packet & pack) {
+	int stopArrow(unsigned long long arrowId) {
+		if (closed) return SCK_CLOSED;
+		if (!FD_ISSET(sck_connection, &write)) return SCK_FD_NOT_SET;
+		Packet packet = p_disableArrow;
+		sendInt(sck_connection, packet);
+		sendData((char*)&arrowId, sizeof(unsigned long long), sck_connection);
+		return 0;
+
+	}
+	int getNewArrowId(unsigned long long & id) {
 		if (closed) return SCK_CLOSED;
 		if (FD_ISSET(sck_connection, &write)) {
-			Packet p = p_sendArrow;
+			Packet p = p_getArrowId;
+			sendInt(sck_connection, p);
+			switchMode(SCK_BLOCK);
+			recvData((char*)&id, sizeof(unsigned long long), sck_connection);
+			switchMode(SCK_NON_BLOCK);
+			return 0;
+		}
+		else {
+			return SCK_FD_NOT_SET;
+		}
+	}
+	int sendExistingArrow(const arrow_packet & pack) {
+		if (closed) return SCK_CLOSED;
+		if (FD_ISSET(sck_connection, &write)) {
+			Packet p = p_sendExistingArrow;
 			sendInt(sck_connection, p);
 			sendData((char*)&pack.x, sizeof(pack.x), sck_connection);
 			sendData((char*)&pack.y, sizeof(pack.y), sck_connection);
@@ -192,6 +224,9 @@ namespace client {
 			sendData((char*)&pack.velY, sizeof(pack.velY), sck_connection);
 			sendData((char*)&pack.velZ, sizeof(pack.velZ), sck_connection);
 			sendData((char*)&pack.clock, sizeof(pack.clock), sck_connection);
+			sendData((char*)&pack.newShot, sizeof(pack.newShot), sck_connection);
+			sendData((char*)&pack.isLive, sizeof(pack.isLive), sck_connection);
+			sendData((char*)&pack.arrowId, sizeof(pack.arrowId), sck_connection);			
 			p = p_finishSendArrow;
 			sendInt(sck_connection, p);
 			return 0;
@@ -199,6 +234,19 @@ namespace client {
 		else {
 			return SCK_FD_NOT_SET;
 		}
+	}
+	
+	int getPid(uint16_t & id) {
+		if (closed) return SCK_CLOSED;
+		if (!FD_ISSET(sck_connection, &write)) return SCK_FD_NOT_SET;
+		Packet p = p_getPid;
+		sendInt(sck_connection, p);
+		uint16_t pid;
+		switchMode(SCK_BLOCK);
+		recvData((char*)&pid, sizeof(uint16_t), sck_connection);
+		switchMode(SCK_NON_BLOCK);
+		id = pid;
+		return 0;
 	}
 	int getArrows(std::vector<arrow_packet> & arrows) {
 		if (closed) return SCK_CLOSED;
@@ -231,7 +279,9 @@ namespace client {
 				recvData((char*)&arr.velZ, sizeof(float), sck_connection);
 				recvData((char*)&arr.clock, sizeof(double), sck_connection);
 				recvData((char*)&arr.shooter, sizeof(unsigned short), sck_connection);
-				recvData((char*)&lastArrow, sizeof(lastArrow), sck_connection);
+				recvData((char*)&arr.newShot, sizeof(bool), sck_connection);
+				recvData((char*)&arr.isLive, sizeof(bool), sck_connection);
+				recvData((char*)&lastArrow, sizeof(lastArrow), sck_connection);				
 				arrows.push_back(arr);
 
 			}
@@ -285,6 +335,7 @@ namespace client {
 		leaderKills = recvInt(sck_connection);
 		switchMode(SCK_NON_BLOCK);
 		delete[] name;
+		return 0;
 
 
 	}
@@ -306,6 +357,32 @@ namespace client {
 			tclock.seconds = seconds;
 		}
 		switchMode(SCK_NON_BLOCK);
+		return 0;
+	}
+	int getServerTime(double & elapsed) {
+		if (closed) return SCK_CLOSED;
+		if (!FD_ISSET(sck_connection, &write)) return SCK_FD_NOT_SET;
+		Packet packet = p_getTimeNow;
+		sendInt(sck_connection, packet);
+		switchMode(SCK_BLOCK);
+		double time;
+		recvData((char*)&time, sizeof(double), sck_connection);
+		switchMode(SCK_NON_BLOCK);
+		elapsed = time;
+		return 0;
+	}
+	int getName(char ** name) {
+		if (closed) return SCK_CLOSED;
+		if (!FD_ISSET(sck_connection, &write)) return SCK_FD_NOT_SET;
+		Packet pack = p_getName;
+		sendInt(sck_connection, pack);
+		switchMode(SCK_BLOCK);
+		int size = recvInt(sck_connection);
+		char * n_name = new char[size + 1];
+		recvData(n_name, size, sck_connection);
+		n_name[size] = '\0';
+		switchMode(SCK_NON_BLOCK);
+		*name = n_name;
 		return 0;
 	}
 	int getPos(std::vector<position> & pos) {

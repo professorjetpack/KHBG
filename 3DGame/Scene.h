@@ -255,6 +255,7 @@ namespace Game {
 		};
 	public:
 		char health;
+		uint16_t pid;
 	public:
 		Player() : damage(false), time(0), clearUp(false), shake(false), black(false), health(100) {}
 		void takeDamage() {
@@ -483,7 +484,7 @@ namespace Game {
 		irrklang::ISoundEngine * getSoundEngine() {
 			return soundEngine;
 		}
-		virtual void renderScene(Shader shader, bool depthPass, Camera & cam, float dt, glm::mat4 view = glm::mat4(), glm::mat4 projection = glm::mat4()) = 0;
+		virtual void renderScene(Shader shader, bool depthPass, Camera & cam, float dt, int graphics, glm::mat4 view = glm::mat4(), glm::mat4 projection = glm::mat4()) = 0;
 	};
 	class Scene1 : public Scene{
 	private:
@@ -499,12 +500,12 @@ namespace Game {
 		std::vector<BoundingBox> hitBoxes;
 		bool firstPass = true;
 		int err = 1;
-		unsigned int houseNormal;
-		Player player;
+		unsigned int houseNormal; 
 //		Debug * test;
 		Shader * markerShader;
 		Marker * marker;
 		bool canPlay = true;
+		double lastInjury = 0;
 	public:
 		~Scene1() {
 			delete markerShader;
@@ -532,8 +533,9 @@ namespace Game {
 			pointIndices = castle.ids;
 			arrows = new Ringbuffer<Arrow>(100);
 			houseNormal = loadTexture("Assets/house_normal.tga");
-			markerShader = new Shader("simple.glsl", "simple.frag");
+			markerShader = new Shader("simple.glslbin", "simple.fragbin", true);
 			marker = new Marker(&markerShader, 1);
+			client::getPid(player.pid);
 //			loadSound("Assets/sounds/arrowShoot.wav", &soundList.list[soundList.s_arrowShoot], soundList.sizes[soundList.s_arrowShoot]);
 //			hitBoxes.push_back(BoundingBox(glm::vec3(-28, -3, -0.8), glm::vec3(-22, 1, 2.2)));
 #pragma region defineBoxes
@@ -625,11 +627,17 @@ namespace Game {
 		}
 		void addArrow(Camera & cam) {
 			soundEngine->play2D("Assets/sounds/arrowShoot.wav");
-			Arrow arr = Arrow(cam, arrow);
+			Arrow arr = Arrow(cam, arrow, player.pid);
+			if(client::getNewArrowId(arr.getId()) != 0) arr.getId() = 0;
+			printf("New arrow with id: %d \n", arr.getId());
+			arr.newShot = true;
 			arrows->addElement(arr);
-			client::sendNewArrow(arr.toPacket());
+			printf("Velocity of arrow: %f %f %f \n", arr.getVelocity().x, arr.getVelocity().y, arr.getVelocity().z);
+			printf("Position of arrow: %f %f %f \n", arr.getPos().x, arr.getPos().y, arr.getPos().z);
+			
+			
 		}
-		void renderScene(Shader shader, bool depthPass, Camera & cam, float dt, glm::mat4 view = glm::mat4(), glm::mat4 projection = glm::mat4()) {
+		void renderScene(Shader shader, bool depthPass, Camera & cam, float dt, int graphics, glm::mat4 view = glm::mat4(), glm::mat4 projection = glm::mat4()) {
 			if (!canPlay) return;
 			glm::mat4 model;
 			model = glm::translate(model, glm::vec3(0.0));
@@ -926,48 +934,34 @@ namespace Game {
 			sun.draw();*/
 #pragma endregion
 #pragma region DrawBow/Arrows
-			model = glm::mat4();
-			int xfactor = (cam.Front.z > 0) ? -1 : 1;
-			int zfactor = (cam.Front.x < 0) ? -1 : 1;
-			model = glm::translate(model, (cam.Position - glm::vec3(0, 0.2, 0)) + glm::vec3(xfactor * 0.05, 0, zfactor * 0.05));
-			model = glm::scale(model, glm::vec3(0.009));
-			if (!cam.look) {
-				model = glm::rotate(model, glm::radians(-cam.Yaw), glm::vec3(0.0, 1.0, 0.0));
-				glm::vec3 axis = glm::normalize(glm::cross(cam.Front, glm::vec3(0, 1, 0)));
-				model = glm::rotate(model, glm::radians(cam.Pitch), glm::vec3(0, 0, 1));
-				lastYaw = -cam.Yaw;
-				lastPitch = cam.Pitch;
-			}
-			else {
-				model = glm::rotate(model, glm::radians(lastYaw), glm::vec3(0.0, 1.0, 0.0));
-				model = glm::rotate(model, glm::radians(lastPitch), glm::vec3(0.0, 0.0, 1.0));
-			}
-			model = glm::rotate(model, glm::radians(278.0f), glm::vec3(0.0, 1.0, 0.0));
-			model = glm::rotate(model, glm::radians(-6.3f), glm::vec3(0.0, 0.0, 1.0));
-  			shader.setMat4("model", model);
-			bow.Draw(shader);
-			std::vector<arrow_packet> serverArrows;
-			client::getArrows(serverArrows);
-			for (int i = 0; i < serverArrows.size(); i++) {				
-				arrows->addElement(serverArrows[i]);
-				arrows->getLastElement().setModel(arrow);
-				glm::vec3 point = arrows->getLastElement().getPoint();
-				soundEngine->play3D("Assets/sounds/arrowShoot.wav", vectorAdapter(point - cam.Position));
-			}
+//			if (!depthPass || graphics == 2) {
+				model = glm::mat4();
+				int xfactor = (cam.Front.z > 0) ? -1 : 1;
+				int zfactor = (cam.Front.x < 0) ? -1 : 1;
+				model = glm::translate(model, (cam.Position - glm::vec3(0, 0.2, 0)) + glm::vec3(xfactor * 0.05, 0, zfactor * 0.05));
+				model = glm::scale(model, glm::vec3(0.009));
+				if (!cam.look) {
+					model = glm::rotate(model, glm::radians(-cam.Yaw), glm::vec3(0.0, 1.0, 0.0));
+					glm::vec3 axis = glm::normalize(glm::cross(cam.Front, glm::vec3(0, 1, 0)));
+					model = glm::rotate(model, glm::radians(cam.Pitch), glm::vec3(0, 0, 1));
+					lastYaw = -cam.Yaw;
+					lastPitch = cam.Pitch;
+				}
+				else {
+					model = glm::rotate(model, glm::radians(lastYaw), glm::vec3(0.0, 1.0, 0.0));
+					model = glm::rotate(model, glm::radians(lastPitch), glm::vec3(0.0, 0.0, 1.0));
+				}
+				model = glm::rotate(model, glm::radians(278.0f), glm::vec3(0.0, 1.0, 0.0));
+				model = glm::rotate(model, glm::radians(-6.3f), glm::vec3(0.0, 0.0, 1.0));
+				shader.setMat4("model", model);
+				bow.Draw(shader);
+//			}
 			for (auto it = arrows->begin(); it != arrows->end(); it++) {
+				if ((*it).newShot) (*it).newShot = false;
+				//				printf("Sending arrow \n");
+				client::sendExistingArrow((*it).toPacket());
 				(*it).draw(shader, dt, depthPass);
 				glm::vec3 point = (*it).getPoint();
-				if ((*it).isAlive() && ((*it).getShooter() != -1 || (*it).getShooter() != 35000)) {
-					if (M_DISTANCE(point, cam.Position) < 0.3) {
-						player.health -= 25;
-						player.takeDamage();
-						soundEngine->play2D("Assets/sounds/arrow-impact.wav");
-						(*it).collide();
-						if (player.health <= 0) {
-							client::notifyDeath((*it).toPacket());
-						}
-					}
-				}
 				if ((*it).isAlive()) {
 					if (point.y < -2.92) {
 						(*it).collide();
@@ -975,18 +969,62 @@ namespace Game {
 					}
 					else {
 						for (int i = 0; i < hitBoxes.size(); i++) {
-							if (hitBoxes[i][point]) { 
-								(*it).collide(); 
-								soundEngine->play3D("Assets/sounds/arrow-impact.wav", vectorAdapter(point - cam.Position)); 
-								break; 
+							if (hitBoxes[i][point]) {
+								(*it).collide();
+								soundEngine->play3D("Assets/sounds/arrow-impact.wav", vectorAdapter(point - cam.Position));
+								break;
 							}
 						}
 					}
-					for (position p : players) {
-						if (M_DISTANCE(point, glm::vec3(p.x, p.y, p.z)) < 0.3) {
-							(*it).collide();
-							soundEngine->play3D("Assets/sounds/arrow-impact.wav", vectorAdapter(point - cam.Position));
-							break;
+/*					if ((*it).getShooter() == player.pid || (*it).getShooter() == 35000) {
+						for (position p : players) {
+							if (M_DISTANCE(point, glm::vec3(p.x, p.y, p.z)) < 0.5) {
+								(*it).collide();
+								soundEngine->play3D("Assets/sounds/arrow-impact.wav", vectorAdapter(point - cam.Position));
+								break;
+							}
+						}
+					}*/
+				}				
+			}
+			std::vector<arrow_packet> serverArrows;
+			std::vector<Arrow> allArrows;
+			if (client::getArrows(serverArrows) != 0) {
+				for (auto it = arrows->begin(); it != arrows->end(); it++) {
+					allArrows.push_back((*it));					
+					if ((*it).newShot) {
+						(*it).newShot = false;
+						soundEngine->play2D("Assets/sounds/arrowShoot.wav");
+					}
+				}
+			}
+			else {
+				for (int i = 0; i < serverArrows.size(); i++) {
+					allArrows.push_back(serverArrows[i]);
+					allArrows[i].setModel(arrow);
+					glm::vec3 point = allArrows[i].getPoint();
+					if (allArrows[i].newShot && allArrows[i].getShooter() != player.pid) {
+//						soundEngine->play3D("Assets/sounds/arrowShoot.wav", vectorAdapter(point - cam.Position));
+					}
+//					printf("Online Arrow pos %f %f %f \n", allArrows[i].getPos().x, allArrows[i].getPos().y, allArrows[i].getPos().z);
+				}
+			}
+			for (auto it = allArrows.begin(); it != allArrows.end(); it++) {
+				if ((*it).getShooter() == player.pid) continue;
+//				if (graphics == 1 && depthPass == false) {
+					(*it).draw(shader, dt, depthPass);
+//				}else if(!depthPass || graphics != 1) (*it).draw(shader, dt, depthPass);
+				glm::vec3 point = (*it).getPoint();
+				if ((*it).isAlive() && ((*it).getShooter() != player.pid && (*it).getShooter() != 35000)) {
+					if (M_DISTANCE(point, cam.Position) < 0.5 && glfwGetTime() - lastInjury > 1) {
+//						client::stopArrow((*it).getId());
+						lastInjury = glfwGetTime();
+						player.health -= 25;
+						player.takeDamage();
+						soundEngine->play2D("Assets/sounds/arrow-impact.wav");
+//						(*it).collide();
+						if (player.health <= 0) {
+							client::notifyDeath((*it).toPacket());
 						}
 					}
 				}
@@ -997,13 +1035,15 @@ namespace Game {
 #pragma endregion
 #pragma region DrawPlayers
 			if (depthPass) {
-				glm::mat4 model = glm::mat4();
-				model = glm::translate(model, cam.Position - glm::vec3(0, .7, 0));
-				float theta = cam.look ? cam.b4LookYaw : cam.Yaw;
-				model = glm::rotate(model, glm::radians(-theta + 90.f), glm::vec3(0, 1, 0));
-				model = glm::scale(model, glm::vec3(.4));
-				shader.setMat4("model", model);
-				knight.Draw(shader);
+//				if (graphics == 2) {
+					glm::mat4 model = glm::mat4();
+					model = glm::translate(model, cam.Position - glm::vec3(0, .7, 0));
+					float theta = cam.look ? cam.b4LookYaw : cam.Yaw;
+					model = glm::rotate(model, glm::radians(-theta + 90.f), glm::vec3(0, 1, 0));
+					model = glm::scale(model, glm::vec3(.4));
+					shader.setMat4("model", model);
+					knight.Draw(shader);
+//				}
 
 
 				unsigned char movement = 0;
@@ -1021,48 +1061,52 @@ namespace Game {
 				if (err != 0 && err != SCK_CLOSED) printf("Error code %i while getting player positions! \n", err);
 			}
 			if (players.size() > 0) {
-				int i = 0;
-				for (position p : players) {
-					glm::mat4 model = glm::mat4();
-					model = glm::translate(model, glm::vec3(p.x, p.y - .7, p.z));
-					model = glm::rotate(model, glm::radians(-p.yaw + 90.f), glm::vec3(0, 1, 0));
-					model = glm::scale(model, glm::vec3(.4));
-					shader.setMat4("model", model);
-					knight.Draw(shader);
-					if (p.allied) {
-						printf("Allied \n");
+//				bool canRun = true;
+//				if (graphics == 1 && depthPass) canRun = false;
+//				if (canRun) {
+					int i = 0;
+					for (position p : players) {
+						glm::mat4 model = glm::mat4();
+						model = glm::translate(model, glm::vec3(p.x, p.y - .7, p.z));
+						model = glm::rotate(model, glm::radians(-p.yaw + 90.f), glm::vec3(0, 1, 0));
+						model = glm::scale(model, glm::vec3(.4));
+						shader.setMat4("model", model);
+						knight.Draw(shader);
+						if (p.allied && !depthPass) {
+							printf("Allied \n");
+							model = glm::mat4();
+							model = translate(model, glm::vec3(p.x, p.y + 0.2, p.z));
+							marker->draw(model, projection, view);
+							shader.use();
+						}
 						model = glm::mat4();
-						model = translate(model, glm::vec3(p.x, p.y + 0.2, p.z));
-						marker->draw(model, projection, view);
-						shader.use();
-					}
-					model = glm::mat4();
-					model = glm::translate(model, glm::vec3(p.x, p.y - 0.1, p.z));
-					model = glm::scale(model, glm::vec3(0.005));
-					model = glm::rotate(model, glm::radians(-p.yaw + 278.f), glm::vec3(0.0, 1.0, 0.0));
-					model = glm::rotate(model, glm::radians(-6.3f), glm::vec3(0.0, 0.0, 1.0));
-					shader.setMat4("model", model);
-					bow.Draw(shader);
-					if (p.movement) {
-						if (playerMoves.size() <= i) playerMoves.push_back(0);
-						if (p.movement & GAME_PLAYER_MOVER) {
-							if (glfwGetTime() - playerMoves[i] > 0.5) {
-								playerMoves[i] = glfwGetTime();
+						model = glm::translate(model, glm::vec3(p.x, p.y - 0.1, p.z));
+						model = glm::scale(model, glm::vec3(0.005));
+						model = glm::rotate(model, glm::radians(-p.yaw + 278.f), glm::vec3(0.0, 1.0, 0.0));
+						model = glm::rotate(model, glm::radians(-6.3f), glm::vec3(0.0, 0.0, 1.0));
+						shader.setMat4("model", model);
+						bow.Draw(shader);
+						if (p.movement) {
+							if (playerMoves.size() <= i) playerMoves.push_back(0);
+							if (p.movement & GAME_PLAYER_MOVER) {
+								if (glfwGetTime() - playerMoves[i] > 0.5) {
+									playerMoves[i] = glfwGetTime();
+									soundEngine->play3D("Assets/sounds/grass-step.wav", vectorAdapter(glm::vec3(p.x, p.y, p.z) - cam.Position));
+								}
+							}
+							else if (p.movement & GAME_PLAYER_FAST_MOVER) {
+								if (glfwGetTime() - playerMoves[i] > 0.4) {
+									playerMoves[i] = glfwGetTime();
+									soundEngine->play3D("Assets/sounds/grass-step.wav", vectorAdapter(glm::vec3(p.x, p.y, p.z) - cam.Position));
+								}
+							}
+							else if (p.movement & GAME_PLAYER_PLAY) {
 								soundEngine->play3D("Assets/sounds/grass-step.wav", vectorAdapter(glm::vec3(p.x, p.y, p.z) - cam.Position));
 							}
 						}
-						else if (p.movement & GAME_PLAYER_FAST_MOVER) {
-							if (glfwGetTime() - playerMoves[i] > 0.4) {
-								playerMoves[i] = glfwGetTime();
-								soundEngine->play3D("Assets/sounds/grass-step.wav", vectorAdapter(glm::vec3(p.x, p.y, p.z) - cam.Position));
-							}
-						}
-						else if (p.movement & GAME_PLAYER_PLAY) {
-							soundEngine->play3D("Assets/sounds/grass-step.wav", vectorAdapter(glm::vec3(p.x, p.y, p.z) - cam.Position));
-						}
+						i++;
 					}
-					i++;
-				}
+//				}
 			}
 			if (player.health <= 0) {
 				soundEngine->play2D("Assets/sounds/die.wav");

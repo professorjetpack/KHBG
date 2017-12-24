@@ -13,28 +13,57 @@ namespace Game {
 	class Shader {
 	public:
 		unsigned int id;
-		Shader(const char * vertexPath, const char * fragPath) {
+		Shader() {};	
+		Shader(const char * vertexPath, const char * fragPath, bool mangled = false) {
 			std::string vertexCode;
 			std::string fragmentCode;
 			std::ifstream vertex;
 			std::ifstream fragment;
 
-			vertex.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-			fragment.exceptions(std::ifstream::failbit | std::ifstream::badbit); 
-			try {
-				vertex.open(vertexPath);
-				fragment.open(fragPath);
-				std::stringstream svertex, sfrag;
-				svertex << vertex.rdbuf(); 
-				sfrag << fragment.rdbuf();
-				vertex.close();
-				fragment.close();
-				vertexCode = svertex.str();
-				fragmentCode = sfrag.str();
+//			vertex.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+//			fragment.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+			if (!mangled) {
+				try {
+					vertex.open(vertexPath);
+					fragment.open(fragPath);
+					std::stringstream svertex, sfrag;
+					svertex << vertex.rdbuf();
+					sfrag << fragment.rdbuf();
+					vertex.close();
+					fragment.close();
+					vertexCode = svertex.str();
+					fragmentCode = sfrag.str();
 
+				}
+				catch (std::ifstream::failure e) {
+					printf_s("Error reading shader\n");
+				}
 			}
-			catch (std::ifstream::failure e) {
-				printf_s("Error reading shader\n");
+			else {
+				vertex.open(vertexPath, std::ios::binary);
+				int noise, size;
+				vertex.read((char*)&noise, sizeof(int));
+				vertex.read((char*)&noise, sizeof(int));
+				vertex.read((char*)&noise, sizeof(int));
+				vertex.read((char*)&size, sizeof(int));
+				vertex.read((char*)&noise, sizeof(int));
+				char * buffer = new char[size+1];
+				vertex.read(buffer, size);
+				buffer[size] = '\0';
+				vertexCode = buffer;
+				delete[] buffer;
+				vertex.close();
+				vertex.open(fragPath, std::ios::binary);
+				vertex.read((char*)&noise, sizeof(int));
+				vertex.read((char*)&noise, sizeof(int));
+				vertex.read((char*)&noise, sizeof(int));
+				vertex.read((char*)&size, sizeof(int));
+				vertex.read((char*)&noise, sizeof(int));
+				buffer = new char[size+1];
+				vertex.read(buffer, size);
+				buffer[size] = '\0';
+				fragmentCode = buffer;
+				delete[] buffer;
 			}
 			const char * vShader = vertexCode.c_str();
 			const char * fShader = fragmentCode.c_str();
@@ -77,7 +106,7 @@ namespace Game {
 
 
 		}
-		Shader(const char * vertexPath, const char * fragmentPath, const char * geometryPath) {
+		Shader(const char * vertexPath, const char * fragmentPath, std::string geometryPath) {
 			std::string geomCode, vertCode, fragCode;
 			std::ifstream vertext, geometry, fragment;
 			vertext.open(vertexPath);

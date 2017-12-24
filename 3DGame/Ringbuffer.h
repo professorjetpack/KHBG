@@ -4,22 +4,31 @@ template<typename T>
 class Ringbuffer {
 private:
 	T * internalVector;
-	int size, pos;
+	int size, pos, actualSize;
+	bool firstLoop;
 public:
 	class iterator;
 public:
-	Ringbuffer() : pos(0), size(10) {
+	Ringbuffer() : pos(0), size(10), actualSize(0), firstLoop(false) {
 		internalVector = new T[10];
 	}
-	Ringbuffer(int size) : pos(0), size(size) {
+	Ringbuffer(int size) : pos(0), size(size), actualSize(0), firstLoop(false) {
 		internalVector = new T[size];
 	}
 	~Ringbuffer() {
 		delete[] internalVector;
 	}
+	void setPos(int newPos) {
+		if (newPos >= size || newPos < 0) pos = 0;
+		else pos = newPos;
+	}
 	void addElement(T element) {
 		if (pos >= size) {
 			pos = 0;
+			firstLoop = true;
+		}
+		else if (!firstLoop) {
+			actualSize++;
 		}
 		internalVector[pos++] = element;
 	}
@@ -33,9 +42,9 @@ public:
 		return iterator(0, *this);
 	}
 	iterator end() {
-		return iterator(size, *this);
+		return iterator(actualSize, *this);
 	}
-	int getSize() {return size; }
+	int getSize() { return size; }
 };
 template<typename T>
 class Ringbuffer<T>::iterator {
@@ -60,4 +69,5 @@ public:
 	}
 };
 #endif //RINGBUFFER_H
+
 
