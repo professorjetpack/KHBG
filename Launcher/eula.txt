@@ -1,1 +1,45 @@
-
+Truthfully, I really don't think this is necessary. I know you guys are all
+good people but this is "proper" procedure. Well 1, thanks for actually
+installing this. I know for most of you this is really just wasting your space.
+So, now to the legal stuff. First and formost I do not own any of the models
+or sound effects. All of them have been created by other fantastic authors
+and all rights to those models and sounds go to their original authors
+on freesound.org and turboquid.com. The fonts used in this project are again
+not created by me and rights go to their original authors as well. Best of
+thanks to Pierre / Dynamedions for creating that awesome soundtrack that's
+played when there is 1:20 left in a game. Now as the end user you are allowed to
+################################################################################
+1a. Play the actual game, that's a given. However you also can record this game
+and yes monetize from video recordings. I have no clue why you would ever do
+such a thing but I am allowing you to if you wish.
+2a. I'm really not sure how an eula is supposed to be formatted so let's get to
+what you're not allowed to do.
+As the end user you agree that:
+###############################################################################
+1. You will not claim any or part of this software as your own. This of course
+excludes the artists of the sound tracks, models and fonts, the programmers of
+the irrklang, stb_image, openGL and glfw. Oh and I guess the programmers of
+the Win32 api and I guess while we're at it the makes of C++.
+2. You will not redistribute or sell this software. Not only is this game not
+worth anything, the licensing of some assets and libraries used here do not
+allow it. Redistributing any or part of this software is unathorized. Exception
+granted to all the artists who contributed to this. And by contribute, I mean
+allow free usage to random people who just snag your work of websites. Especially
+to Pierre / Dynamedions. I just snagged that wonderful piece off youtube and I
+sincerely hope I am crediting you correctly as the video I saw was a reupload
+3. You will not modify any part of this software in any way.
+4. You will sell me your soul. At any time I may call upon you to commit acts
+in my name and you are obligated to follow through with those acts. If you do
+not agree with this term, email me and I will void this condition for you
+5. You will not find any way to make any kind of modification that will give
+you an unfair advantage. What is commonly known as 'hacking' the game. Admin
+abuse is perfectly allowed on private servers. In fact, I encourage it :)
+6. You will not allowed to accept 'donation' for this game.
+7. You are not legally authorized to popularize and spread this game via any
+medium, including by word of mouth. While I will most likely not make a big
+issue about it, if I wake up one day and this crap is trending on youtube,
+you agree that on my whim you may owe me up to a $250,000 fine. The fine may
+be given out whenever I feel like it, you agree that my youtube example is not
+the only way this term can be applied.
+##############################################################################
+Once again thanks. And I hope you'll have at least 10 minutes of fun.
