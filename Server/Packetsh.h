@@ -3,9 +3,12 @@
 #include <WinSock2.h>
 #include <vector>
 #include <map>
+#include <fstream>
+#include <string>
 //#include <thread>
 //#include <mutex>
 #include "Time.h"
+#include "Ringbuffer.h"
 char comTest[] = "test";
 #define IS_DISCONNECT(ID) (send((ID), comTest, sizeof(comTest), NULL) == SOCKET_ERROR)
 #define SCK_CLOSED -0xcf1
@@ -15,6 +18,7 @@ char comTest[] = "test";
 #define GAME_TIME 1
 #define GAME_NO_LIMIT 0
 #define GAME_TEAMS 2
+#define GAME_ADMINS 4
 #define MAP_NULL 35000
 namespace server {
 	typedef unsigned char byte;
@@ -25,7 +29,7 @@ namespace server {
 		p_getPos,
 		p_players,
 		p_endPlayers,
-		p_sendArrow,
+		p_getArrowId,
 		p_finishSendArrow,
 		p_getNewArrows,
 		p_arrows,
@@ -35,7 +39,12 @@ namespace server {
 		p_getLeader,
 		p_name,
 		p_getTime,
-		p_command
+		p_command,
+		p_getName,
+		p_getTimeNow,
+		p_sendExistingArrow,
+		p_getPid,
+		p_disableArrow
 	};
 #pragma pack(push, 1)
 	struct position {
@@ -51,7 +60,9 @@ namespace server {
 		float velX, velY, velZ;
 		double clock;
 		unsigned long long arrowId;
+		bool newShot;
 		ID shooter;
+		bool isLive;
 	};
 #pragma pack(pop)
 	std::vector<SOCKET> users;
@@ -65,13 +76,18 @@ namespace server {
 		}
 	};
 	std::vector<team> teamIds;
+	std::vector<ID> adminList;
+	std::vector<std::string> banList;
 	std::map<ID, std::string> names;
+	std::vector<std::string> ips;
 	std::map<ID, ID> partners;
-	bool teams;
+	bool teams, admins;
+	short password;
 	Timer * timer;
+	ServerTime time;
 	unsigned long long arrowId;
 	uint16_t arrowClock = 0;
-	std::vector<arrow_packet> newArrows;
+	Ringbuffer<arrow_packet> newArrows(100);
 	int userNum = 0;
 	u_long mode;
 	FD_SET /*readFds, writeFds,*/ exceptFds;
@@ -80,6 +96,28 @@ namespace server {
 	mode = MODE; \
 	ioctlsocket(users[id], FIONBIO, &mode);
 
+	void writeBans(const std::vector<std::string> & bans) {
+		std::ofstream out;
+		out.open("bans.txt", std::ios::out);
+		if (!out.is_open()) printf("Bans.txt not open!");
+		else {
+			for (std::string s : bans) {
+				out << s << '\n';
+			}
+		}
+	}
+	std::vector<std::string> readBans() {
+		std::vector<std::string> buffer;
+		std::ifstream in;
+		in.open("bans.txt", std::ios::in);
+		if (in.is_open()) {
+			std::string buf;
+			while (std::getline(in, buf)) {
+				buffer.push_back(buf);
+			}
+		}
+		return buffer;
+	}
 //	std::mutex mu;
 	int disconnectClient(ID id, char * reason = "socket error") {
 //		if (IS_DISCONNECT(id)) return id;
@@ -102,6 +140,8 @@ namespace server {
 			}
 		}
 		if (t != -1) teamIds.erase(teamIds.begin() + t);
+		auto itt = std::find(adminList.begin(), adminList.end(), id);
+		if (itt != adminList.end()) adminList.erase(itt);
 		return SCK_CLOSED;
 	}
 /*	void switchMode(ID id, int sckMode) {
@@ -169,6 +209,17 @@ namespace server {
 							disconnectClient(i, "disconnect packet recieved");
 							continue;
 						}
+						else if (packet == p_getTimeNow) {
+							if (!FD_ISSET(users[i], &writeSck)) continue;
+							double tNow = time.getSecondsNow();
+							if(sendData((char*)&tNow, sizeof(double), i) == SCK_CLOSED) continue;
+						}
+						else if (packet == p_getPid) {
+							if (!FD_ISSET(users[i], &writeSck)) continue;
+							printf("Getting pid of %d \n", i);
+							ID pid = i;
+							if (sendData((char*)&pid, sizeof(ID), i) == SCK_CLOSED) continue;
+						}
 						else if (packet == p_name) {
 							switchMode(i, SCK_BLOCK);
 							int nameSize = recvInt(i);
@@ -178,8 +229,16 @@ namespace server {
 							switchMode(i, SCK_NO_BLOCK);
 							name[nameSize] = '\0';
 							std::string username(name);
+							for (auto it = names.begin(); it != names.end(); it++) {
+								if (username == (*it).second) {
+									srand(time.getSecondsNow() / 1000.0);
+									int num = rand() % 100;
+									username += "000" + std::to_string(userNum) + std::to_string(num);
+									break;
+								}
+							}
 							names.insert(std::pair<ID, std::string>(i, username));
-							printf("Alias of %d: %s \n", i, name);
+							printf("Alias of %d: %s \n", i, username.c_str());
 							partners.insert(std::pair<ID, ID>(i, MAP_NULL));
 							delete[] name;
 						}
@@ -262,18 +321,57 @@ namespace server {
 							}
 
 						}
-						else if (packet == p_sendArrow) {
+						else if (packet == p_disableArrow) {
+							switchMode(i, SCK_BLOCK);
+							unsigned long long id;
+							recvData((char*)&id, sizeof(long long), i);
+							switchMode(i, SCK_NO_BLOCK);
+							for (auto it = newArrows.begin(); it != newArrows.end(); it++) {
+								if ((*it).arrowId == id) {
+									(*it).isLive = false;
+									break;
+								}
+							}
+						}
+						else if (packet == p_getName) {
+							long team = -1;
+							for (int j = 0; j < teamIds.size(); j++) {
+								if (teamIds[j].p1 == i) team = teamIds[j].p2;
+								else if(teamIds[j].p2 == i) team = teamIds[j].p1;
+							}
+							if (team != -1) {
+								char msg[500];
+								sprintf_s(msg, 500, "Team| %s : %s", names[i].c_str(), names[team].c_str());
+								if (sendInt(i, strlen(msg)) == SCK_CLOSED) continue;
+								if (sendData(msg, strlen(msg), i) == SCK_CLOSED) continue;
+
+							}
+							else {
+								char msg[500];
+								sprintf_s(msg, 500, "Solo| %s", names[i].c_str());
+								if (sendInt(i, strlen(msg)) == SCK_CLOSED) continue;
+								if (sendData(msg, strlen(msg), i) == SCK_CLOSED) continue;
+							}
+						}
+						else if (packet == p_getArrowId) {
 							printf("send arrow called \n");
+							if(sendData((char*)&arrowId, sizeof(arrowId), i) == SCK_CLOSED) continue;
+							arrowId++;
+						}
+						else if (packet == p_sendExistingArrow) {
 							switchMode(i, SCK_BLOCK);
 							arrow_packet nArrow{};
 							memset(&nArrow, 0, sizeof(nArrow));
-							if(recvData((char*)&nArrow.x, sizeof(nArrow.x), i) == SCK_CLOSED) continue;
-							if(recvData((char*)&nArrow.y, sizeof(nArrow.y), i) == SCK_CLOSED) continue;
-							if(recvData((char*)&nArrow.z, sizeof(nArrow.z), i) == SCK_CLOSED) continue;
-							if(recvData((char*)&nArrow.velX, sizeof(nArrow.velX), i) == SCK_CLOSED) continue;
-							if(recvData((char*)&nArrow.velY, sizeof(nArrow.velY), i) == SCK_CLOSED) continue;
-							if(recvData((char*)&nArrow.velZ, sizeof(nArrow.velZ), i) == SCK_CLOSED) continue;
-							if(recvData((char*)&nArrow.clock, sizeof(nArrow.clock), i) == SCK_CLOSED) continue;
+							if (recvData((char*)&nArrow.x, sizeof(nArrow.x), i) == SCK_CLOSED) continue;
+							if (recvData((char*)&nArrow.y, sizeof(nArrow.y), i) == SCK_CLOSED) continue;
+							if (recvData((char*)&nArrow.z, sizeof(nArrow.z), i) == SCK_CLOSED) continue;
+							if (recvData((char*)&nArrow.velX, sizeof(nArrow.velX), i) == SCK_CLOSED) continue;
+							if (recvData((char*)&nArrow.velY, sizeof(nArrow.velY), i) == SCK_CLOSED) continue;
+							if (recvData((char*)&nArrow.velZ, sizeof(nArrow.velZ), i) == SCK_CLOSED) continue;
+							if (recvData((char*)&nArrow.clock, sizeof(nArrow.clock), i) == SCK_CLOSED) continue;
+							if (recvData((char*)&nArrow.newShot, sizeof(nArrow.newShot), i) == SCK_CLOSED) continue;
+							if (recvData((char*)&nArrow.isLive, sizeof(nArrow.isLive), i) == SCK_CLOSED) continue;
+							if (recvData((char*)&nArrow.arrowId, sizeof(nArrow.arrowId), i) == SCK_CLOSED) continue;
 
 							if (int num = recvInt(i) != p_finishSendArrow) {
 								char msg[256];
@@ -282,16 +380,26 @@ namespace server {
 								continue;
 							}
 							switchMode(i, SCK_NO_BLOCK);
-							nArrow.shooter = i; 
-							nArrow.arrowId = arrowId++;
-							newArrows.push_back(nArrow);
+							nArrow.shooter = i;
+							bool exist = false;
+							for (auto it = newArrows.begin(); it != newArrows.end(); it++) {
+								if ((*it).arrowId == nArrow.arrowId) {
+									(*it) = nArrow;
+									exist = true;
+									break;
+								}
+							}
+							if (!exist) {
+								printf("Arrow does not exist \n");
+								newArrows.addElement(nArrow);
+							}
 						}
 						else if (packet == p_getNewArrows) {
 //							printf("get arrows called \n"); 
-							if (++arrowClock > users.size()) {
+/*							if (++arrowClock > users.size()) {
 								newArrows.erase(newArrows.begin(), newArrows.end());
 								arrowClock = 0;
-							}
+							}*/
 							unsigned long long lastArrow;
 							switchMode(i, SCK_BLOCK);
 							if (recvData((char*)&lastArrow, sizeof(lastArrow), i) == SCK_CLOSED) continue;
@@ -299,26 +407,34 @@ namespace server {
 							if (FD_ISSET(users[i], &writeSck)) {
 								int packet = p_arrows;
 								if (sendInt(i, packet) == SCK_CLOSED) continue;
-								int amount = newArrows.size();
+								int amount = newArrows.getSize();
 								if (sendInt(i, amount) == SCK_CLOSED) continue;
 //								printf("Amount of arrows %d \n", amount);
 								bool crashed = false;
 								for (auto it = newArrows.begin(); it != newArrows.end(); it++) {
-									if ((*it).arrowId <= lastArrow || (*it).shooter == i) continue;									
+//									if ((*it).arrowId <= lastArrow || (*it).shooter == i) continue;									
 									if (sendData((char*)&((*it).y), sizeof((*it).y), i) == SCK_CLOSED) { crashed = true; break;  }
 									if (sendData((char*)&((*it).x), sizeof((*it).x), i) == SCK_CLOSED) { crashed = true; break;  }
 									if (sendData((char*)&((*it).z), sizeof((*it).z), i) == SCK_CLOSED) { crashed = true; break;  }
 									if (sendData((char*)&((*it).velX), sizeof((*it).velX), i) == SCK_CLOSED) { crashed = true; break;  }
 									if (sendData((char*)&((*it).velY), sizeof((*it).velY), i) == SCK_CLOSED) { crashed = true; break;  }
 									if (sendData((char*)&((*it).velZ), sizeof((*it).velZ), i) == SCK_CLOSED) { crashed = true; break;  }
-									if (sendData((char*)&((*it).clock), sizeof((*it).clock), i) == SCK_CLOSED) { crashed = true; break;  }
-									if (partners[i] == (*it).shooter && partners[(*it).shooter] == i) {
-										ID team = MAP_NULL;
-										if (sendData((char*)&team, sizeof(team), i) == SCK_CLOSED) { crashed = true; break; }
+									if (sendData((char*)&((*it).clock), sizeof((*it).clock), i) == SCK_CLOSED) { crashed = true; break;  }									
+									if (teamIds.size() > 0) {
+										bool sendTeam = false;
+										for (auto t = teamIds.begin(); t != teamIds.end(); t++) {
+											if (((*t).p1 == i && (*t).p2 == (*it).shooter) || ((*t).p2 == i && (*t).p1 == (*it).shooter)) { sendTeam = true; break; }
+										}
+										if (sendTeam) {
+											ID team = MAP_NULL;
+											if (sendData((char*)&team, sizeof(team), i) == SCK_CLOSED) { crashed = true; break; }
+										}
 									}
 									else {
 										if (sendData((char*)&((*it).shooter), sizeof((*it).shooter), i) == SCK_CLOSED) { crashed = true; break; }
 									}
+									if (sendData((char*)&((*it).newShot), sizeof((*it).newShot), i) == SCK_CLOSED) { crashed = true; break; }
+									if (sendData((char*)&((*it).isLive), sizeof((*it).isLive), i) == SCK_CLOSED) {crashed = true; break; }
 									if (sendData((char*)&((*it).arrowId), sizeof((*it).arrowId), i) == SCK_CLOSED) { crashed = true; break; }
 								}
 								if (crashed) continue;
@@ -326,17 +442,19 @@ namespace server {
 								if(sendData((char*)&end_packet, sizeof(end_packet), i) == SCK_CLOSED) continue;
 							}
 						}
-						else if (packet == p_died) {
+						else if (packet == p_died) {						
 							switchMode(i, SCK_BLOCK);
 							int killer = recvInt(i);
 							if (killer == SCK_CLOSED) continue;
 							switchMode(i, SCK_NO_BLOCK);
+							if (killer == i) continue;
 							if (kills[killer] == 0) {
 								kills[killer] = 1;
 							}
 							else {
 								kills[killer] += 1;
 							}
+							printf("%d was killed by %d \n", i, killer);
 //							printf("%d was killed by %d \n", i, killer);
 
 						}
@@ -359,7 +477,7 @@ namespace server {
 								lead.first = (ID)j;
 								lead.second = kills[teamIds[j].p1] + kills[teamIds[j].p2];
 							}
-							if (!team) {
+							if (team == false) {
 								if (sendInt(i, names[lead.first].size()) == SCK_CLOSED) continue;
 								char * name = (char*)(names[lead.first].c_str());
 								if (sendData(name, names[lead.first].size(), i) == SCK_CLOSED) continue;
@@ -394,11 +512,12 @@ namespace server {
 								printf("Ally opcode with name %s \n", name.c_str());
 //								if (partners[i] == MAP_NULL || partners.count(i) == 0) {
 									for (auto it = names.begin(); it != names.end(); it++) {
-										if ((*it).second == name && (*it).first != i) {
+										if ((*it).second == name) {
 											printf("Player exists \n");
 											printf("Partnering %d with %d. Partners size: %d \n", i, (*it).first, partners.size());
 	//										if (partners[i] == MAP_NULL) partners[i] = (*it).first;
 //											/*else*/ partners.insert(std::pair<ID, ID>(i, (*it).first));
+											if (i == (*it).first) break;
 											partners[i] = (*it).first;
 							//				if (partners.count((*it).first) != 0) {
 												if (partners[(*it).first] == i) {
@@ -423,6 +542,48 @@ namespace server {
 									}
 								}
 								if (t != -1) teamIds.erase(teamIds.begin() + t);
+							}
+							else if (opcode == "admin") {
+								if (admins) {
+									std::string code = c.substr(c.find(' ') + 1);
+									short c_password = atoi(code.c_str());
+									if (password == c_password) {
+										adminList.push_back(i);
+										printf("Admin login by: %d \n", i);
+									}
+								}
+							}
+							else if (opcode == "kick") {
+								if (admins) {
+									if (std::find(adminList.begin(), adminList.end(), i) != adminList.end()) {
+										std::string name = c.substr(c.find(' ') + 1);
+										for (auto it = names.begin(); it != names.end(); it++) {
+											if ((*it).second == name) {
+												char msg[256];
+												sprintf_s(msg, 256, "User %s kicked from server", name.c_str());
+												disconnectClient((*it).first, msg);
+												break;
+											}
+										}
+									}
+								}
+							}
+							else if (opcode == "ban") {
+								if (admins) {
+									if (std::find(adminList.begin(), adminList.end(), i) != adminList.end()) {
+										std::string name = c.substr(c.find(' ') + 1);
+										for (auto it = names.begin(); it != names.end(); it++) {
+											if ((*it).second == name) {
+												banList.push_back(ips[(*it).first]);
+												writeBans(banList);
+												char msg[256];
+												sprintf_s(msg, 256, "User %s banned from server", name.c_str());
+												disconnectClient((*it).first, msg);
+												break;
+											}
+										}
+									}
+								}
 							}
 
 						}
@@ -473,6 +634,12 @@ namespace server {
 		if (gameMode & GAME_TEAMS) {
 			teams = true;
 		}
+		if (gameMode & GAME_ADMINS) {
+			admins = true;
+			password = gameMode >> 16;
+			printf("Password %d \n", password);
+			banList = readBans();
+		}		
 		printf("Server started!! \n");
 		while (true) {
 			FD_ZERO(&readSck);
@@ -491,8 +658,14 @@ namespace server {
 					if (gameMode & GAME_TIME && timer == NULL) {
 						timer = new Timer(time);
 					}
-					users.push_back(sck_connection);
-					printf("Client %i connected! \n", userNum++);
+					getpeername(sck_connection, (SOCKADDR*)&address, &addrSize);
+					std::string ip(inet_ntoa(address.sin_addr));
+					if (std::find(banList.begin(), banList.end(), ip) == banList.end()) {
+						users.push_back(sck_connection);
+						ips.push_back(ip);
+						printf("Client %i connected (%s)! \n", userNum++, ip.c_str());
+					}
+					else printf("Client %s is banned! \n", ip.c_str());
 					
 				}
 			}

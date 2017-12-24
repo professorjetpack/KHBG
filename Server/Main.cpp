@@ -23,7 +23,20 @@ int main() {
 	std::cin >> line;
 	if (line == "true") {
 		mode |= GAME_TEAMS;
-		printf("teams enabled!");
+		printf("teams enabled! \n");
+	}
+	printf("allow remote admins [true] or [false] \n");
+	line = "";
+	std::cin >> line;
+	if (line == "true") {
+		printf("Admin pincode: \n");
+		std::cin >> line;
+		short pincode = atoi(line.c_str());
+		mode |= GAME_ADMINS;
+		int code = pincode << 16;
+		mode |= code;
+		printf("Code %d set! \n", pincode);
+
 	}
 	server::startup(mode, time);
 	return 0;

@@ -63,4 +63,19 @@ public:
 		_time = clock();
 	}
 };
+class ServerTime {
+private:
+	bool timeStarted;
+	clock_t timeStart;
+public:
+	ServerTime() {
+		if (timeStarted == NULL) {
+			timeStarted = true;
+			timeStart = clock();
+		}
+	}
+	double getSecondsNow() {
+		return ((double)clock() - (double)timeStart) / CLOCKS_PER_SEC;
+	}
+};
 #endif //TIMER_H
