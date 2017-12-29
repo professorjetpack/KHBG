@@ -66,5 +66,6 @@
     <None Include="simple.frag" />
     <None Include="sky.glsl" />
     <None Include="ShaderLow.frag" />
+    <None Include="ShaderLow.glsl" />
   </ItemGroup>
 </Project>

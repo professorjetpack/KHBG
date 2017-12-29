@@ -83,11 +83,11 @@ namespace Game {
 			updateCameraVectors();
 		}
 
-		glm::mat4 GetViewMatrix()
+/*		glm::mat4 GetViewMatrix()
 		{
 			return glm::lookAt(Position, Position + Front, Up);
 		}
-
+		*/
 		void ProcessKeyboard(Camera_Movement direction, float deltaTime)
 		{
 			if(M_DISTANCE(Position, oldPos) > 1) oldPos = Position;
@@ -139,26 +139,26 @@ namespace Game {
 			if (jump) {
 				move = false; fastMove = false;
 				if (firstJump) {
-					shouldPlay = true;
+				//	shouldPlay = true;
 					firstJump = false;
 					airTime = glfwGetTime();
 				}
 				else {
 					shouldPlay = false;
 				}
-				yJumpVel -= 0.3 * dt * 20;
+				yJumpVel -= 0.5 * dt * 20;
 				Position.y += yJumpVel * dt;
 			}
 #ifndef FLY
 			else if (Position.y > -2.5) {
-				Position.y -= 0.3 * dt * 20;
+				Position.y -= 0.5 * dt * 20;
 			}
 #endif
 #ifndef NOCLIP
 			if (Position.y < -2.5) {
 				if (jump) shouldPlay = true;
 				else shouldPlay = false;
-				Position.y += 0.3 * dt * 20;
+				Position.y += 0.5 * dt * 20;
 				yJumpVel = BASE_JUMP_VEL;
 				airTime = glfwGetTime();
 				firstJump = true;
@@ -168,9 +168,6 @@ namespace Game {
 				glm::vec3 min = hitBoxes[i].min;
 				glm::vec3 max = hitBoxes[i].max;
 				if (hitBoxes[i][Position]) {
-					firstJump = true;
-					jump = false;
-					yJumpVel = BASE_JUMP_VEL;
 //					Position = oldPos;
 /*					if (Position.x > min.x && Position.x <= max.x - ((max.x - min.x) / 2.0)) Position.x = min.x;
 					else if (Position.x > min.x + ((max.x - min.x) / 2.0) && Position.x < max.x) Position.x = max.x;
@@ -180,13 +177,18 @@ namespace Game {
 					else if (Position.y > min.y + ((max.y - min.y) / 2.0) && Position.y < max.y) Position.y = max.y;
 					*/
 					glm::vec3 checkPos = Position;
-					if (oldPos.y - 0.5 >= max.y) Position.y = max.y;
+					if (Position.y < max.y && Position.y > min.y + ((max.y - min.y) / 2.0)) {
+						Position.y += 0.5 * dt * 20;
+						firstJump = true;
+						jump = false;
+						yJumpVel = BASE_JUMP_VEL;
+					}
 					else if (oldPos.y <= min.y) Position.y = min.y;
 					if (oldPos.x <= min.x) Position.x = min.x;
 					else if (oldPos.x >= max.x) Position.x = max.x;
 					if (oldPos.z <= min.z) Position.z = min.z;
 					else if (oldPos.z >= max.z) Position.z = max.z;
-					if (Position == checkPos) Position = oldPos;
+//					if (Position == checkPos) Position = oldPos;
 				}
 			}
 			
@@ -198,16 +200,7 @@ namespace Game {
 			xoffset *= MouseSensitivity;
 			yoffset *= MouseSensitivity;
 
-			Yaw += xoffset;
-			Pitch -= yoffset;
-
-			if (constrainPitch)
-			{
-				if (Pitch > 89.0f)
-					Pitch = 89.0f;
-				if (Pitch < -89.0f)
-					Pitch = -89.0f;
-			}
+			Yaw += xoffset;			
 			if (look) {
 				if (abs(b4LookYaw - Yaw) > 100.0) {
 					if (Yaw < b4LookYaw) {
@@ -217,6 +210,14 @@ namespace Game {
 						Yaw = b4LookYaw + 100;
 					}
 				}
+			}
+			Pitch -= yoffset;
+			if (constrainPitch)
+			{
+				if (Pitch > 89.0f)
+					Pitch = 89.0f;
+				if (Pitch < -89.0f)
+					Pitch = -89.0f;
 			}
 
 			updateCameraVectors();
@@ -239,6 +240,8 @@ namespace Game {
 			front.y = sin(glm::radians(Pitch));
 			front.z = sin(glm::radians(Yaw)) * cos(glm::radians(Pitch));
 			Front = glm::normalize(front);
+			Right = glm::normalize(glm::cross(Front, WorldUp));
+			Up = glm::normalize(glm::cross(Right, Front));
 			if (!look) {
 				lastFront = Front;
 				walk = Front;
@@ -246,9 +249,6 @@ namespace Game {
 				walk.y = 0;
 #endif
 			}
-
-			Right = glm::normalize(glm::cross(Front, WorldUp));  
-			Up = glm::normalize(glm::cross(Right, Front));
 		}
 	};
 }

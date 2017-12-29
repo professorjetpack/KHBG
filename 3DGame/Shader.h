@@ -13,6 +13,7 @@ namespace Game {
 	class Shader {
 	public:
 		unsigned int id;
+		operator unsigned int() const { return id; }
 		Shader() {};	
 		Shader(const char * vertexPath, const char * fragPath, bool mangled = false) {
 			std::string vertexCode;
@@ -41,6 +42,11 @@ namespace Game {
 			}
 			else {
 				vertex.open(vertexPath, std::ios::binary);
+				if (!vertex.is_open()) {
+					char msg[MAX_PATH];
+					sprintf_s(msg, MAX_PATH, "%s was not found!", vertexPath);
+					MessageBox(NULL, msg, "KFBR", MB_OK | MB_ICONERROR);
+				}
 				int noise, size;
 				vertex.read((char*)&noise, sizeof(int));
 				vertex.read((char*)&noise, sizeof(int));
@@ -50,10 +56,18 @@ namespace Game {
 				char * buffer = new char[size+1];
 				vertex.read(buffer, size);
 				buffer[size] = '\0';
+				for (int i = 0; i < size; i++) {
+					buffer[i] ^= 5746;
+				}
 				vertexCode = buffer;
 				delete[] buffer;
 				vertex.close();
 				vertex.open(fragPath, std::ios::binary);
+				if (!vertex.is_open()) {
+					char msg[MAX_PATH];
+					sprintf_s(msg, MAX_PATH, "%s was not found!", fragPath);
+					MessageBox(NULL, msg, "KFBR", MB_OK | MB_ICONERROR);
+				}
 				vertex.read((char*)&noise, sizeof(int));
 				vertex.read((char*)&noise, sizeof(int));
 				vertex.read((char*)&noise, sizeof(int));
@@ -62,6 +76,9 @@ namespace Game {
 				buffer = new char[size+1];
 				vertex.read(buffer, size);
 				buffer[size] = '\0';
+				for (int i = 0; i < size; i++) {
+					buffer[i] ^= 5746;
+				}
 				fragmentCode = buffer;
 				delete[] buffer;
 			}
@@ -340,7 +357,7 @@ namespace Game {
 			glDeleteShader(vRes);
 			glDeleteShader(fRes);
 		}
-		void use()
+/*		void use()
 		{
 			glUseProgram(id);
 		}
@@ -362,7 +379,17 @@ namespace Game {
 		void setVec3(const std::string &name, glm::vec3 value) const {
 			glUniform3f(glGetUniformLocation(id, name.c_str()), value.x, value.y, value.z);
 		}
-		
+		void setVec4(const std::string &name, glm::vec4 value) const {
+			glUniform4f(glGetUniformLocation(id, name.c_str()), value.x, value.y, value.z, value.w);
+		}
+		*/
 
 	};
+#define USE_SHADER(ID) (glUseProgram(ID))
+#define SHADER_SET_BOOL(ID, NAME, VALUE) (glUniform1i(glGetUniformLocation(ID, NAME), (int)VALUE))
+#define SHADER_SET_INT(id, name, value) (glUniform1i(glGetUniformLocation(id, name), value))
+#define SHADER_SET_FLOAT(id, name, value) (glUniform1f(glGetUniformLocation(id, name), value))
+#define SHADER_SET_MAT4(id, name, value) (glUniformMatrix4fv(glGetUniformLocation(id, name), 1, GL_FALSE, glm::value_ptr(value)))
+#define SHADER_SET_VEC3(id, name, value) (glUniform3f(glGetUniformLocation(id, name), value.x, value.y, value.z))
+#define SHADER_SET_VEC4(id, name, value) (glUniform4f(glGetUniformLocation(id, name), value.x, value.y, value.z, value.w))
 }

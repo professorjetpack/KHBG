@@ -10,7 +10,8 @@
 #define M_C_RAY_POS 0
 #define M_C_RAY_OFFSET 1
 
-#define M_DISTANCE(p1, p2) (sqrt(pow((p1).x - (p2).x, 2) + pow((p1).y - (p2).y, 2) + pow((p1).z - (p2).z, 2)))
+#define M_DISTANCE(p1, p2) (sqrt((((p1).x - (p2).x) * ((p1).x - (p2).x)) + (((p1).y - (p2).y) * ((p1).y - (p2).y)) + (((p1).z - (p2).z) * ((p1).z - (p2).z))))
+#define M_DISTANCE_SQUARED(p1, p2) ((((p1).x - (p2).x) * ((p1).x - (p2).x)) + (((p1).y - (p2).y) * ((p1).y - (p2).y)) + (((p1).z - (p2).z) * ((p1).z - (p2).z)))
 #define M_CENTROID(TRIANGLE) (glm::vec3{((TRIANGLE)[0].x + (TRIANGLE)[1].x + (TRIANGLE)[2].x) / 3.0, \
 		((TRIANGLE)[0].y + (TRIANGLE)[1].y + (TRIANGLE)[2].y) / 3.0, \
 		((TRIANGLE)[0].z + (TRIANGLE)[1].z + (TRIANGLE)[2].z) / 3.0})

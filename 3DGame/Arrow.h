@@ -4,6 +4,8 @@
 #include "Camera.h"
 #include "Assimp.h"
 namespace Game {
+#define ARROW_DEPTH_PASS 1
+#define ARROW_HAS_SHADOW 2
 	class Arrow {
 	private:
 		glm::vec3 pos;
@@ -15,6 +17,7 @@ namespace Game {
 		unsigned long long id;
 		bool isLive;
 		glm::vec3 axis;
+		glm::mat4 model;
 		enum direction {
 			d_up,
 			d_down
@@ -38,89 +41,95 @@ namespace Game {
 			else {
 				velocity = cam.lastFront;
 			}
-			if (!client::getServerTime(clock)) {
+			if (client::getServerTime(clock) != 0) {
 				clock = glfwGetTime();
 			}
 		}
-		void update(float dt, bool depthPass) {
-			glm::mat4 model;
-			double gravity = 8;
-			double timeNow;
-			if (!client::getServerTime(timeNow)) {
-				timeNow = glfwGetTime();
-			}
-			if (isLive && !depthPass) {
-				velocity.y = velocity.y - (gravity * ((timeNow - clock) / 1000.0));
-				pos += velocity * glm::vec3(20) * glm::vec3(dt);
-			}
-			double nextVelY = velocity.y - (gravity * (((timeNow + dt) - clock) / 1000.0));
-			glm::vec3 nextVelocity = velocity;
-			nextVelocity.y = isLive ? nextVelY : velocity.y;
+		void draw(Shader shader, float dt, char shadowParams) {
+			if (!(shadowParams & ARROW_DEPTH_PASS) || (shadowParams & ARROW_HAS_SHADOW)) {
+				glm::mat4 model = glm::mat4();
+				double gravity = 8;
+				double timeNow;
+				if (client::getServerTime(timeNow) != 0) {
+					timeNow = glfwGetTime();
+				}
+				if (isLive) {
+					velocity.y = velocity.y - (gravity * ((timeNow - clock) / 1000.0));
+					pos += velocity * glm::vec3(20) * glm::vec3(dt);
+				}
+				double nextVelY = velocity.y - (gravity * (((timeNow + dt) - clock) / 1000.0));
+				glm::vec3 nextVelocity = velocity;
+				nextVelocity.y = isLive ? nextVelY : velocity.y;
 
-			model = glm::translate(model, pos);
-			model = glm::scale(model, glm::vec3(0.05));
+				model = glm::translate(model, pos);
+				model = glm::scale(model, glm::vec3(0.05));
 
-			glm::vec3 lookat = glm::vec3(nextVelocity * glm::vec3(20) * glm::vec3(dt));
-			axis = glm::vec3();
-			axis = glm::normalize(glm::cross(velocity, glm::vec3(0, 1, 0)));
-			glm::vec3 test = glm::normalize(velocity);
-			if (1.0 - abs(test.z) < 0.4) {
-				angle = atan(abs(nextVelocity.y / nextVelocity.z));
+				glm::vec3 lookat = glm::vec3(nextVelocity * glm::vec3(20) * glm::vec3(dt));
+				axis = glm::vec3();
+				axis = glm::normalize(glm::cross(velocity, glm::vec3(0, 1, 0)));
+				glm::vec3 test = glm::normalize(velocity);
+				glm::vec3 rotation = glm::normalize(nextVelocity);
+				if (1.0 - abs(test.z) < 0.4) {
+					angle = atan(abs(rotation.y / rotation.z));
+				}
+				else {
+					angle = atan(abs(rotation.y / rotation.x));
+				}
+				if ((pos + lookat).y > pos.y) {
+					model = glm::rotate(model, angle + glm::radians(270.f), axis);
+					arrow_direction = d_up;
+				}
+				else {
+					model = glm::rotate(model, -angle - glm::radians(90.f), axis);
+					arrow_direction = d_down;
+				}
+				SHADER_SET_MAT4(shader, "model", model);
+				arrow.Draw(shader);
 			}
-			else {
-				angle = atan(abs(nextVelocity.y / nextVelocity.x));
-			}
-			if ((pos + lookat).y > pos.y) {
-				model = glm::rotate(model, angle + glm::radians(270.f), axis);
-				arrow_direction = d_up;
-			}
-			else {
-				model = glm::rotate(model, -angle - glm::radians(90.f), axis);
-				arrow_direction = d_down;
+			else if(shadowParams & ARROW_HAS_SHADOW && !(shadowParams & ARROW_DEPTH_PASS)){
+				model = glm::mat4();
+				double gravity = 8;
+				double timeNow;
+				if (client::getServerTime(timeNow) != 0) {
+					timeNow = glfwGetTime();
+				}
+				if (isLive) {
+					velocity.y = velocity.y - (gravity * ((timeNow - clock) / 1000.0));
+					pos += velocity * glm::vec3(20) * glm::vec3(dt);
+				}
+				double nextVelY = velocity.y - (gravity * (((timeNow + dt) - clock) / 1000.0));
+				glm::vec3 nextVelocity = velocity;
+				nextVelocity.y = isLive ? nextVelY : velocity.y;
+
+				model = glm::translate(model, pos);
+				model = glm::scale(model, glm::vec3(0.05));
+
+				glm::vec3 lookat = glm::vec3(nextVelocity * glm::vec3(20) * glm::vec3(dt));
+				axis = glm::vec3();
+				axis = glm::normalize(glm::cross(velocity, glm::vec3(0, 1, 0)));
+				glm::vec3 test = glm::normalize(velocity);
+				glm::vec3 rotation = glm::normalize(nextVelocity);
+				if (1.0 - abs(test.z) < 0.4) {
+					angle = atan(abs(rotation.y / rotation.z));
+				}
+				else {
+					angle = atan(abs(rotation.y / rotation.x));
+				}
+				if ((pos + lookat).y > pos.y) {
+					model = glm::rotate(model, angle + glm::radians(270.f), axis);
+					arrow_direction = d_up;
+				}
+				else {
+					model = glm::rotate(model, -angle - glm::radians(90.f), axis);
+					arrow_direction = d_down;
+				}
+				SHADER_SET_MAT4(shader, "model", model);
+				arrow.Draw(shader);
+				
 			}
 		}
-		void draw(Shader shader, float dt, bool depthPass) {
-			glm::mat4 model;
-			double gravity = 8;
-			double timeNow;
-			if (!client::getServerTime(timeNow)) {
-				timeNow = glfwGetTime();
-			}
-			if (isLive && !depthPass) {				
-				velocity.y = velocity.y - (gravity * ((timeNow - clock) / 1000.0));
-				pos += velocity * glm::vec3(20) * glm::vec3(dt);
-			}
-			double nextVelY = velocity.y - (gravity * (((timeNow + dt) - clock) / 1000.0));
-			glm::vec3 nextVelocity = velocity;
-			nextVelocity.y = isLive ? nextVelY : velocity.y;
-
-			model = glm::translate(model, pos);
-			model = glm::scale(model, glm::vec3(0.05));
-
-			glm::vec3 lookat = glm::vec3(nextVelocity * glm::vec3(20) * glm::vec3(dt));
-			axis = glm::vec3();
-			axis = glm::normalize(glm::cross(velocity, glm::vec3(0, 1, 0)));
-			glm::vec3 test = glm::normalize(velocity);
-			if (1.0 - abs(test.z) < 0.4) {
-				angle = atan(abs(nextVelocity.y / nextVelocity.z));
-			}
-			else {
-				angle = atan(abs(nextVelocity.y / nextVelocity.x));
-			}
-			if ((pos + lookat).y > pos.y) {
-				model = glm::rotate(model, angle + glm::radians(270.f), axis);
-				arrow_direction = d_up;
-			}
-			else {
-				model = glm::rotate(model, -angle - glm::radians(90.f), axis);
-				arrow_direction = d_down; 
-			}
-
-			shader.setMat4("model", model);
-			arrow.Draw(shader);
-		}
-		unsigned long long & getId() { return id; }
-		void setModel(const Model arrow) {
+		inline unsigned long long & getId() { return id; }
+		inline void setModel(const Model arrow) {
 			this->arrow = arrow;
 		}
 		arrow_packet toPacket() {
@@ -138,13 +147,13 @@ namespace Game {
 			pack.isLive = isLive;
 			return pack;
 		}
-		int getShooter() {
+		inline int getShooter() {
 			return shooter;
 		}
-		void collide() {
+		inline void collide() {
 			isLive = false;
 		}
-		bool isAlive() { return isLive; }
+		inline bool isAlive() { return isLive; }
 		glm::vec3 getVelocity() {
 			return velocity;
 		}

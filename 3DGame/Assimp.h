@@ -62,21 +62,22 @@ namespace Game {
 				std::stringstream stream;
 				std::string number;
 				std::string name = textures[i].type;
-				if (name == "textures_diffuse")  
+				if (name != "textures_diffuse")
 					stream << diffuseNr++;		
 				else if (name == "textures_specular") {	
-					shader.setInt("specularMap", i);
+					SHADER_SET_INT(shader, "specularMap", i);
 					stream << specularNr++;
 				}
 				else if (name == "textures_normal") {
 					stream << normalNr++;
 //					continue;
-					shader.setInt("normalMap", i);
+					SHADER_SET_INT(shader, "normalMap", i);
 //					printf("Normal identified: %s\n", textures[i].path.C_Str());
 				}
+				
 				number = stream.str(); 
 
-				shader.setFloat(("material." + name + number).c_str(), i); 
+				SHADER_SET_FLOAT(shader, ("material." + name + number).c_str(), i);
 				glBindTexture(GL_TEXTURE_2D, textures[i].id);
 			}
 //			glActiveTexture(GL_TEXTURE1);
@@ -107,8 +108,8 @@ namespace Game {
 			glEnableVertexAttribArray(1);
 			glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(offsetof(Vertex, texCoords)));
 			glEnableVertexAttribArray(2);
-			glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(offsetof(Vertex, tangent)));
-			glEnableVertexAttribArray(3);
+//			glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(offsetof(Vertex, tangent)));
+//			glEnableVertexAttribArray(3);
 		}
 	};
 	class Model {
@@ -125,7 +126,7 @@ namespace Game {
 				meshes[i].Draw(shader);
 			}
 		}
-		void init(char * path) {
+		inline void init(char * path) {
 			loadModel(path);
 		}
 		Model & operator=(const Model & mod) {

@@ -32,19 +32,19 @@ public:
 		}
 		internalVector[pos++] = element;
 	}
-	T & getElement(int pos) {
+	inline T & getElement(int pos) {
 		return internalVector[pos];
 	}
-	T & getLastElement() {
+	inline T & getLastElement() {
 		return internalVector[pos - 1];
 	}
-	iterator begin() {
+	inline iterator begin() {
 		return iterator(0, *this);
 	}
-	iterator end() {
+	inline iterator end() {
 		return iterator(actualSize, *this);
 	}
-	int getSize() { return size; }
+	inline int getSize() { return actualSize; }
 };
 template<typename T>
 class Ringbuffer<T>::iterator {
@@ -53,18 +53,18 @@ private:
 	Ringbuffer & buffer;
 public:
 	iterator(int pos, Ringbuffer & buffer) : itPos(pos), buffer(buffer) {}
-	iterator & operator++() {
+	inline iterator & operator++() {
 		itPos++;
 		return *this;
 	}
-	iterator & operator++(int) {
+	inline iterator & operator++(int) {
 		itPos++;
 		return *this;
 	}
-	bool operator!=(const iterator & other) {
+	inline bool operator!=(const iterator & other) {
 		return itPos != other.itPos;
 	}
-	T & operator*() {
+	inline T & operator*() {
 		return buffer.getElement(itPos);
 	}
 };

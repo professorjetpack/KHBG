@@ -13,7 +13,7 @@
 #include "Arrow.h"
 #include <string>
 #include <fstream>
-#define skySize 100.0f
+#define skySize 1.0f
 namespace Game {
 #pragma region Util
 	#define vectorAdapter(vec) (irrklang::vec3df {(vec).x, (vec).y, (vec).z})
@@ -256,14 +256,15 @@ namespace Game {
 	public:
 		char health;
 		uint16_t pid;
+		unsigned char arrows;
 	public:
 		Player() : damage(false), time(0), clearUp(false), shake(false), black(false), health(100) {}
-		void takeDamage() {
+		inline void takeDamage() {
 			time = glfwGetTime();
 			damage = true;
 			shake = true;
 		}
-		bool getDamage() {
+		inline bool getDamage() {
 			if (glfwGetTime() - 3 > time) {
 				damage = false;
 				clearUp = true;
@@ -273,16 +274,16 @@ namespace Game {
 			}
 			return damage;
 		}
-		bool getShake() {
+		inline bool getShake() {
 			if (glfwGetTime() - 0.5 > time) {
 				shake = false;
 			}
 			return shake;
 		}
-		bool isClearing() {
+		inline bool isClearing() {
 			return clearUp;
 		}
-		float getShakeTime() {
+		inline float getShakeTime() {
 			if (shake) {
 				return glfwGetTime() - time;
 			}
@@ -297,7 +298,7 @@ namespace Game {
 			black = true;
 			return respawnLocations[index];
 		}
-		bool isBlack() {
+		inline bool isBlack() {
 			if (black) {
 				black = glfwGetTime() - deathTime > 2 ? false : true;
 			}
@@ -324,10 +325,10 @@ namespace Game {
 			glEnableVertexAttribArray(0);
 		}
 		void draw(glm::mat4 model, glm::mat4 projection, glm::mat4 view) {
-			markerShader->use();
-			markerShader->setMat4("model", model);
-			markerShader->setMat4("projection", projection);
-			markerShader->setMat4("view", view);
+			USE_SHADER(markerShader->id);
+			SHADER_SET_MAT4(markerShader->id, "model", model);
+			SHADER_SET_MAT4(markerShader->id, "projection", model);
+			SHADER_SET_MAT4(markerShader->id, "view", model);
 //			markerShader->setVec3("color", glm::vec3(0, 191, 255));
 			glBindVertexArray(VAO);
 			glPointSize(20.f);
@@ -412,10 +413,10 @@ namespace Game {
 			matrices.view = view;
 		}
 		void draw(Shader debugShader, Shader & normalShader) {
-			debugShader.use();
-			debugShader.setMat4("projection", matrices.projection);
-			debugShader.setMat4("view", matrices.view);
-			debugShader.setMat4("model", glm::mat4());
+			USE_SHADER(debugShader);
+			SHADER_SET_MAT4(debugShader, "projection", matrices.projection);
+			SHADER_SET_MAT4(debugShader, "view", matrices.view);
+			SHADER_SET_MAT4(debugShader, "model", glm::mat4());
 			for (int i = 0; i < totalSize; i++) {
 				glBindVertexArray(VAO[i]);
 				glPointSize(10.0f);
@@ -429,19 +430,20 @@ namespace Game {
 				//			glEnable(GL_DEPTH_TEST);
 				glBindVertexArray(0);
 			}
-			normalShader.use();
+			USE_SHADER(normalShader);
 		}
 	};
 #pragma endregion
 	class Scene {
 	protected:
 		Ringbuffer<Arrow> * arrows;
-		Player player;
 		irrklang::ISoundEngine * soundEngine;
 		char * name;
 		std::vector<position> players;
 		std::vector<double> playerMoves;
 		int err;
+	public:
+		Player player;
 	public:
 		Scene() {
 			soundEngine = irrklang::createIrrKlangDevice();
@@ -451,37 +453,41 @@ namespace Game {
 			delete arrows;
 		}
 		virtual void addArrow(Camera & cam) = 0;
-		bool getDamage() {
+		inline bool getDamage() {
 			return player.getDamage();
 		}
-		int getHealth() {
+		inline int getHealth() {
 			return player.health;
 		}
-		bool isClearing() {
+		inline unsigned char & getArrows() {
+			return player.arrows;
+		}
+		inline bool isClearing() {
 			return player.isClearing();
 		}
-		bool getShake() {
+		inline bool getShake() {
 			return player.getShake();
 		}
-		bool isDead() {
+		inline bool isDead() {
 			return player.isBlack();
 		}
-		float getShakeTime() {
+		inline float getShakeTime() {
 			return player.getShakeTime();
 		}
-		void setHealth(int health) {
+		inline void setHealth(int health) {
 			player.health = health;
 		}
+		
 		int getKills() {
 			int kills;
 			if (client::getKills(kills) != 0) return 0;
 			return kills;
 		}
-		void reset(Camera & cam) {
+		inline void reset(Camera & cam) {
 			player.health = 100;
 			cam.Position = player.getRespawnLocation();
 		}
-		irrklang::ISoundEngine * getSoundEngine() {
+		inline irrklang::ISoundEngine * getSoundEngine() {
 			return soundEngine;
 		}
 		virtual void renderScene(Shader shader, bool depthPass, Camera & cam, float dt, int graphics, glm::mat4 view = glm::mat4(), glm::mat4 projection = glm::mat4()) = 0;
@@ -495,9 +501,9 @@ namespace Game {
 		Quad ground, wall;
 		glm::mat4 _model;
 		int overflow = 0;
-		std::vector<std::vector<glm::vec3>> points;
-		std::vector<std::vector<unsigned int>> pointIndices;
 		std::vector<BoundingBox> hitBoxes;
+		std::vector<arrow_packet> serverArrows;
+		std::vector<Arrow> allArrows;
 		bool firstPass = true;
 		int err = 1;
 		unsigned int houseNormal; 
@@ -529,9 +535,7 @@ namespace Game {
 			knight.init("Assets/chevalier.obj");
 			arrow.init("Assets/Arrow.fbx");
 			wall.addTexture("Assets/brickwall_normal.jpg", "normal");
-			points = castle.points;
-			pointIndices = castle.ids;
-			arrows = new Ringbuffer<Arrow>(100);
+			arrows = new Ringbuffer<Arrow>(12);
 			houseNormal = loadTexture("Assets/house_normal.tga");
 			markerShader = new Shader("simple.glslbin", "simple.fragbin", true);
 			marker = new Marker(&markerShader, 1);
@@ -625,15 +629,13 @@ namespace Game {
 #pragma endregion
 
 		}
-		void addArrow(Camera & cam) {
+		inline void addArrow(Camera & cam) {
 			soundEngine->play2D("Assets/sounds/arrowShoot.wav");
 			Arrow arr = Arrow(cam, arrow, player.pid);
 			if(client::getNewArrowId(arr.getId()) != 0) arr.getId() = 0;
 			printf("New arrow with id: %d \n", arr.getId());
 			arr.newShot = true;
 			arrows->addElement(arr);
-			printf("Velocity of arrow: %f %f %f \n", arr.getVelocity().x, arr.getVelocity().y, arr.getVelocity().z);
-			printf("Position of arrow: %f %f %f \n", arr.getPos().x, arr.getPos().y, arr.getPos().z);
 			
 			
 		}
@@ -641,15 +643,14 @@ namespace Game {
 			if (!canPlay) return;
 			glm::mat4 model;
 			model = glm::translate(model, glm::vec3(0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			castle.Draw(shader);
-			_model = model;
 #pragma region DrawHouse1
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(-25, -3.0, 0));
 			model = glm::scale(model, glm::vec3(.003f));
 			model = glm::rotate(model, glm::radians(45.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 //			shader.setBool("useNormal", true);
 //			glActiveTexture(GL_TEXTURE2);
 //			glBindTexture(GL_TEXTURE_2D, houseNormal);
@@ -658,67 +659,67 @@ namespace Game {
 			model = glm::translate(model, glm::vec3(-25, -3.0, 5));
 			model = glm::scale(model, glm::vec3(.003f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(25, -3.0, 5));
 			model = glm::scale(model, glm::vec3(.003f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(-25, -3.0, -5));
 			model = glm::scale(model, glm::vec3(.003f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(30, -3.0, 30));
 			model = glm::scale(model, glm::vec3(.003f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(-30, -3.0, 5));
 			model = glm::scale(model, glm::vec3(.003f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(25, -3.0, 30));
 			model = glm::scale(model, glm::vec3(.003f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(25, -3.0, 17));
 			model = glm::scale(model, glm::vec3(.003f));
 			model = glm::rotate(model, glm::radians(10.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(0, -3.0, -30));
 			model = glm::scale(model, glm::vec3(.003f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(-30, -3.0, -30));
 			model = glm::scale(model, glm::vec3(.003f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(-10, -3.0, 5));
 			model = glm::scale(model, glm::vec3(.003f));
 			model = glm::rotate(model, glm::radians(10.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(33, -3.0, 17));
 			model = glm::scale(model, glm::vec3(.003f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house.Draw(shader); 
 //			shader.setBool("useNormal", false);
 #pragma endregion
@@ -727,43 +728,43 @@ namespace Game {
 			model = glm::translate(model, glm::vec3(0, -3.2, 30));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			village.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(10, -3.2, 30));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			village.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(20, -3.2, 30));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			village.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(20, -3.2, 20));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			village.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(20, -3.2, 10));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			village.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(40, -3.2, -5));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			village.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(-18, -3.2, -20));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(45.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			village.Draw(shader);
 #pragma endregion
 #pragma region DrawStreet
@@ -771,61 +772,61 @@ namespace Game {
 			model = glm::translate(model, glm::vec3(10, -3.2, 20));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			street.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(30, -3.2, 20));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			street.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(10, -3.2, -20));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			street.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(20, -3.2, -20));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			street.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(30, -3.2, -20));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(45.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			street.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(-20, -3.2, 20));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			street.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(40, -3.2, 0));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			street.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(10, -3.2, 13));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			street.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(-10, -3.2, -30));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			street.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(-20, -3.2, -30));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(1.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			street.Draw(shader);
 #pragma endregion
 #pragma region DrawHouse2
@@ -833,49 +834,49 @@ namespace Game {
 			model = glm::translate(model, glm::vec3(10, -3.2, -30));
 			model = glm::scale(model, glm::vec3(.5f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house2.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(15, -3.2, -30));
 			model = glm::scale(model, glm::vec3(.5f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house2.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(20, -3.2, -30));
 			model = glm::scale(model, glm::vec3(.5f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house2.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(-10, -3.2, -20));
 			model = glm::scale(model, glm::vec3(.5f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house2.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(40, -3.2, 20));
 			model = glm::scale(model, glm::vec3(.5f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house2.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(-5, -3.2, -30));
 			model = glm::scale(model, glm::vec3(.5f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house2.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(15, -3.2, -20));
 			model = glm::scale(model, glm::vec3(.5f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house2.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(40, -3.2, -10));
 			model = glm::scale(model, glm::vec3(.5f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			house2.Draw(shader);
 #pragma endregion
 #pragma region DrawMisc
@@ -883,32 +884,32 @@ namespace Game {
 			model = glm::translate(model, glm::vec3(25, -1, 0));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(270.0f), glm::vec3(1.0, 0.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			cathedral.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(-10, -3.2, 20));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(1.0, 0.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			tower.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(20, -3.2, -10));
 			model = glm::scale(model, glm::vec3(.3f));
 			model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			tower.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(0, -3.0, 20));
 			model = glm::scale(model, glm::vec3(.009f));
 			model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			well.Draw(shader);
 			model = glm::mat4();
 			model = glm::translate(model, glm::vec3(-30, -4, 20));
 			model = glm::scale(model, glm::vec3(.029f));
 			model = glm::rotate(model, glm::radians(270.0f), glm::vec3(1.0, 0.0, 0.0));
 			model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0, 0.0, 1.0));
-			shader.setMat4("model", model);
+			SHADER_SET_MAT4(shader, "model", model);("model", model);
 			forum.Draw(shader);
 //			shader.setBool("useNormal", false);
 //			shader.setBool("useSpecular", false);
@@ -919,22 +920,22 @@ namespace Game {
 			sunModel = glm::translate(sunModel, glm::vec3(0.0, -2.0, 0.0));
 			sunModel = glm::scale(sunModel, glm::vec3(2));
 //			sunModel = glm::rotate(sunModel, glm::radians(90.0f), glm::vec3(0.0, 0.0, 0.0));
-			shader.setMat4("model", sunModel);
+			SHADER_SET_MAT4(shader, "model", sunModel);
 			ground.draw();
 			sunModel = glm::mat4();
 			sunModel = glm::translate(sunModel, glm::vec3(0.0, 6.9, 0.0));
 			sunModel = glm::scale(sunModel, glm::vec3(20));
-			shader.setMat4("model", sunModel);
+			SHADER_SET_MAT4(shader, "model", sunModel);
 			ground.draw();
 /*			sunModel = glm::mat4();
 			sunModel = glm::rotate(sunModel, glm::radians(90.f), glm::vec3(1, 0, 0));
 			sunModel = glm::translate(sunModel, glm::vec3(0, 50, -50));
 			sunModel = glm::scale(sunModel, glm::vec3(2));
-			shader.setMat4("model", sunModel);
+			SHADER_SET_MAT4(shader, "model", model);("model", sunModel);
 			sun.draw();*/
 #pragma endregion
-#pragma region DrawBow/Arrows
-//			if (!depthPass || graphics == 2) {
+#pragma region DrawBow/Arrows/Players
+			if (!depthPass) {
 				model = glm::mat4();
 				int xfactor = (cam.Front.z > 0) ? -1 : 1;
 				int zfactor = (cam.Front.x < 0) ? -1 : 1;
@@ -953,99 +954,72 @@ namespace Game {
 				}
 				model = glm::rotate(model, glm::radians(278.0f), glm::vec3(0.0, 1.0, 0.0));
 				model = glm::rotate(model, glm::radians(-6.3f), glm::vec3(0.0, 0.0, 1.0));
-				shader.setMat4("model", model);
+				SHADER_SET_MAT4(shader, "model", model);("model", model);
 				bow.Draw(shader);
-//			}
-			for (auto it = arrows->begin(); it != arrows->end(); it++) {
-				if ((*it).newShot) (*it).newShot = false;
-				//				printf("Sending arrow \n");
-				client::sendExistingArrow((*it).toPacket());
-				(*it).draw(shader, dt, depthPass);
-				glm::vec3 point = (*it).getPoint();
-				if ((*it).isAlive()) {
-					if (point.y < -2.92) {
-						(*it).collide();
-						soundEngine->play3D("Assets/sounds/arrow-impact.wav", vectorAdapter(point - cam.Position));
-					}
-					else {
-						for (int i = 0; i < hitBoxes.size(); i++) {
-							if (hitBoxes[i][point]) {
-								(*it).collide();
-								soundEngine->play3D("Assets/sounds/arrow-impact.wav", vectorAdapter(point - cam.Position));
-								break;
-							}
-						}
-					}
-/*					if ((*it).getShooter() == player.pid || (*it).getShooter() == 35000) {
-						for (position p : players) {
-							if (M_DISTANCE(point, glm::vec3(p.x, p.y, p.z)) < 0.5) {
-								(*it).collide();
-								soundEngine->play3D("Assets/sounds/arrow-impact.wav", vectorAdapter(point - cam.Position));
-								break;
-							}
-						}
-					}*/
-				}				
-			}
-			std::vector<arrow_packet> serverArrows;
-			std::vector<Arrow> allArrows;
-			if (client::getArrows(serverArrows) != 0) {
 				for (auto it = arrows->begin(); it != arrows->end(); it++) {
-					allArrows.push_back((*it));					
-					if ((*it).newShot) {
-						(*it).newShot = false;
-						soundEngine->play2D("Assets/sounds/arrowShoot.wav");
-					}
-				}
-			}
-			else {
-				for (int i = 0; i < serverArrows.size(); i++) {
-					allArrows.push_back(serverArrows[i]);
-					allArrows[i].setModel(arrow);
-					glm::vec3 point = allArrows[i].getPoint();
-					if (allArrows[i].newShot && allArrows[i].getShooter() != player.pid) {
-//						soundEngine->play3D("Assets/sounds/arrowShoot.wav", vectorAdapter(point - cam.Position));
-					}
-//					printf("Online Arrow pos %f %f %f \n", allArrows[i].getPos().x, allArrows[i].getPos().y, allArrows[i].getPos().z);
-				}
-			}
-			for (auto it = allArrows.begin(); it != allArrows.end(); it++) {
-				if ((*it).getShooter() == player.pid) continue;
-//				if (graphics == 1 && depthPass == false) {
+					if ((*it).newShot) (*it).newShot = false;
+					client::sendExistingArrow((*it).toPacket());
 					(*it).draw(shader, dt, depthPass);
-//				}else if(!depthPass || graphics != 1) (*it).draw(shader, dt, depthPass);
-				glm::vec3 point = (*it).getPoint();
-				if ((*it).isAlive() && ((*it).getShooter() != player.pid && (*it).getShooter() != 35000)) {
-					if (M_DISTANCE(point, cam.Position) < 0.5 && glfwGetTime() - lastInjury > 1) {
-//						client::stopArrow((*it).getId());
-						lastInjury = glfwGetTime();
-						player.health -= 25;
-						player.takeDamage();
-						soundEngine->play2D("Assets/sounds/arrow-impact.wav");
-//						(*it).collide();
-						if (player.health <= 0) {
-							client::notifyDeath((*it).toPacket());
+					glm::vec3 point = (*it).getPoint();
+					if ((*it).isAlive()) {
+						if (point.y < -2.92) {
+							(*it).collide();
+							soundEngine->play3D("Assets/sounds/arrow-impact.wav", vectorAdapter(point - cam.Position));
+						}
+						else {
+							for (int i = 0; i < hitBoxes.size(); i++) {
+								if (hitBoxes[i][point]) {
+									(*it).collide();
+									soundEngine->play3D("Assets/sounds/arrow-impact.wav", vectorAdapter(point - cam.Position));
+									break;
+								}
+							}
 						}
 					}
 				}
-			}
-			cam.applyForces(dt, hitBoxes);
-//			printf("Pos: %f, %f, %f \n", cam.Position.x, cam.Position.y, cam.Position.z);
-			
-#pragma endregion
-#pragma region DrawPlayers
-			if (depthPass) {
-//				if (graphics == 2) {
-					glm::mat4 model = glm::mat4();
-					model = glm::translate(model, cam.Position - glm::vec3(0, .7, 0));
-					float theta = cam.look ? cam.b4LookYaw : cam.Yaw;
-					model = glm::rotate(model, glm::radians(-theta + 90.f), glm::vec3(0, 1, 0));
-					model = glm::scale(model, glm::vec3(.4));
-					shader.setMat4("model", model);
-					knight.Draw(shader);
-//				}
-
-
+				serverArrows.erase(serverArrows.begin(), serverArrows.end());
+				if (client::getArrows(serverArrows) != 0) {
+					//offline
+					allArrows.erase(allArrows.begin(), allArrows.end());
+					for (auto it = arrows->begin(); it != arrows->end(); it++) {
+						(*it).setModel(arrow);
+						allArrows.push_back((*it));
+					}
+				}
+				else {
+					allArrows.erase(allArrows.begin(), allArrows.end());
+//					printf("Size of server arrows: %d \n", serverArrows.size());
+					for (int i = 0; i < serverArrows.size(); i++) {
+//						printf("Recieving arrow \n");
+//						if (allArrows[i].getShooter() == player.pid) continue;
+						allArrows.push_back(serverArrows[i]);
+						allArrows[i].setModel(arrow);
+						if (allArrows[i].newShot && allArrows[i].getShooter() != player.pid) {
+							//						soundEngine->play3D("Assets/sounds/arrowShoot.wav", vectorAdapter(point - cam.Position));
+						}
+						//					printf("Online Arrow pos %f %f %f \n", allArrows[i].getPos().x, allArrows[i].getPos().y, allArrows[i].getPos().z);
+					}
+				}
+				for (auto it = allArrows.begin(); it != allArrows.end(); it++) {
+					//				if (graphics == 1 && depthPass == false) {
+					(*it).draw(shader, dt, depthPass);
+					//				}else if(!depthPass || graphics != 1) (*it).draw(shader, dt, depthPass);
+					glm::vec3 point = (*it).getPoint();
+					if ((*it).isAlive() && ((*it).getShooter() != player.pid && (*it).getShooter() != 35000)) {
+						if (M_DISTANCE(point, cam.Position) < 0.5 && glfwGetTime() - lastInjury > 1) {
+							client::stopArrow((*it).getId());
+							lastInjury = glfwGetTime();
+							player.health -= 25;
+							player.takeDamage();
+							soundEngine->play2D("Assets/sounds/arrow-impact.wav");
+							//						(*it).collide();
+							if (player.health <= 0) {
+								client::notifyDeath((*it).toPacket());
+							}
+						}
+					}
+				}
+				cam.applyForces(dt, hitBoxes);
 				unsigned char movement = 0;
 				if (cam.move) movement |= GAME_PLAYER_MOVER;
 				else if (cam.fastMove) movement |= GAME_PLAYER_FAST_MOVER;
@@ -1059,32 +1033,28 @@ namespace Game {
 
 				err = client::getPos(players);
 				if (err != 0 && err != SCK_CLOSED) printf("Error code %i while getting player positions! \n", err);
-			}
-			if (players.size() > 0) {
-//				bool canRun = true;
-//				if (graphics == 1 && depthPass) canRun = false;
-//				if (canRun) {
+				if (players.size() > 0) {
 					int i = 0;
 					for (position p : players) {
 						glm::mat4 model = glm::mat4();
 						model = glm::translate(model, glm::vec3(p.x, p.y - .7, p.z));
 						model = glm::rotate(model, glm::radians(-p.yaw + 90.f), glm::vec3(0, 1, 0));
 						model = glm::scale(model, glm::vec3(.4));
-						shader.setMat4("model", model);
+						SHADER_SET_MAT4(shader, "model", model);("model", model);
 						knight.Draw(shader);
-						if (p.allied && !depthPass) {
+						if (p.allied) {
 							printf("Allied \n");
 							model = glm::mat4();
 							model = translate(model, glm::vec3(p.x, p.y + 0.2, p.z));
 							marker->draw(model, projection, view);
-							shader.use();
+							USE_SHADER(shader);
 						}
 						model = glm::mat4();
 						model = glm::translate(model, glm::vec3(p.x, p.y - 0.1, p.z));
 						model = glm::scale(model, glm::vec3(0.005));
 						model = glm::rotate(model, glm::radians(-p.yaw + 278.f), glm::vec3(0.0, 1.0, 0.0));
 						model = glm::rotate(model, glm::radians(-6.3f), glm::vec3(0.0, 0.0, 1.0));
-						shader.setMat4("model", model);
+						SHADER_SET_MAT4(shader, "model", model);("model", model);
 						bow.Draw(shader);
 						if (p.movement) {
 							if (playerMoves.size() <= i) playerMoves.push_back(0);
@@ -1106,28 +1076,80 @@ namespace Game {
 						}
 						i++;
 					}
-//				}
-			}
-			if (player.health <= 0) {
-				soundEngine->play2D("Assets/sounds/die.wav");
-				cam.Position = player.getRespawnLocation();
-				player.health = 100;
-			}
-			if (cam.shouldPlay) {
-				soundEngine->play2D("Assets/sounds/grass-step.wav");
-			}
-			else if (cam.move) {
-				if (glfwGetTime() - cam.moveTime > 0.5) {
-					cam.moveTime = glfwGetTime();
+					//				}
+				}
+				if (player.health <= 0) {
+					soundEngine->play2D("Assets/sounds/die.wav");
+					cam.Position = player.getRespawnLocation();
+					player.health = 100;
+				}
+				if (cam.shouldPlay) {
 					soundEngine->play2D("Assets/sounds/grass-step.wav");
 				}
-			}
-			else if (cam.fastMove) {
-				if (glfwGetTime() - cam.moveTime > 0.4) {
-					cam.moveTime = glfwGetTime();
-					soundEngine->play2D("Assets/sounds/grass-step.wav");
+				else if (cam.move) {
+					if (glfwGetTime() - cam.moveTime > 0.5) {
+						cam.moveTime = glfwGetTime();
+						soundEngine->play2D("Assets/sounds/grass-step.wav");
+					}
+				}
+				else if (cam.fastMove) {
+					if (glfwGetTime() - cam.moveTime > 0.4) {
+						cam.moveTime = glfwGetTime();
+						soundEngine->play2D("Assets/sounds/grass-step.wav");
+					}
 				}
 			}
+			else if (graphics == 2) {
+				for (auto it = allArrows.begin(); it != allArrows.end(); it++) {
+					(*it).draw(shader, dt, depthPass | graphics);
+				}
+				model = glm::mat4();
+				int xfactor = (cam.Front.z > 0) ? -1 : 1;
+				int zfactor = (cam.Front.x < 0) ? -1 : 1;
+				model = glm::translate(model, (cam.Position - glm::vec3(0, 0.2, 0)) + glm::vec3(xfactor * 0.05, 0, zfactor * 0.05));
+				model = glm::scale(model, glm::vec3(0.009));
+				if (!cam.look) {
+					model = glm::rotate(model, glm::radians(-cam.Yaw), glm::vec3(0.0, 1.0, 0.0));
+					glm::vec3 axis = glm::normalize(glm::cross(cam.Front, glm::vec3(0, 1, 0)));
+					model = glm::rotate(model, glm::radians(cam.Pitch), glm::vec3(0, 0, 1));
+					lastYaw = -cam.Yaw;
+					lastPitch = cam.Pitch;
+				}
+				else {
+					model = glm::rotate(model, glm::radians(lastYaw), glm::vec3(0.0, 1.0, 0.0));
+					model = glm::rotate(model, glm::radians(lastPitch), glm::vec3(0.0, 0.0, 1.0));
+				}
+				model = glm::rotate(model, glm::radians(278.0f), glm::vec3(0.0, 1.0, 0.0));
+				model = glm::rotate(model, glm::radians(-6.3f), glm::vec3(0.0, 0.0, 1.0));
+				SHADER_SET_MAT4(shader, "model", model);
+				bow.Draw(shader);
+
+				for (position p : players) {
+					glm::mat4 model = glm::mat4();
+					model = glm::translate(model, glm::vec3(p.x, p.y - .7, p.z));
+					model = glm::rotate(model, glm::radians(-p.yaw + 90.f), glm::vec3(0, 1, 0));
+					model = glm::scale(model, glm::vec3(.4));
+					SHADER_SET_MAT4(shader, "model", model);
+					knight.Draw(shader);
+					model = glm::mat4();
+					model = glm::translate(model, glm::vec3(p.x, p.y - 0.1, p.z));
+					model = glm::scale(model, glm::vec3(0.005));
+					model = glm::rotate(model, glm::radians(-p.yaw + 278.f), glm::vec3(0.0, 1.0, 0.0));
+					model = glm::rotate(model, glm::radians(-6.3f), glm::vec3(0.0, 0.0, 1.0));
+					SHADER_SET_MAT4(shader, "model", model);
+					bow.Draw(shader);
+				}
+				glm::mat4 model = glm::mat4();
+				model = glm::translate(model, cam.Position - glm::vec3(0, .7, 0));
+				float theta = cam.look ? cam.b4LookYaw : cam.Yaw;
+				model = glm::rotate(model, glm::radians(-theta + 90.f), glm::vec3(0, 1, 0));
+				model = glm::scale(model, glm::vec3(.4));
+				SHADER_SET_MAT4(shader, "model", model);
+				knight.Draw(shader);
+
+			}
+//			printf("Pos: %f, %f, %f \n", cam.Position.x, cam.Position.y, cam.Position.z);
+			
 #pragma endregion
 
 
