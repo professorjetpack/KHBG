@@ -5,12 +5,28 @@
 #include <vector>
 #include <map>
 #include <string>
+#include <fstream>
 #include <initializer_list>
 namespace gui {
 #define GUI_PARAM_AND |
 #define and GUI_PARAM_AND
 #define GUI_PARAM_EXCLUDE ^
 #define exclude GUI_PARAM_EXCLUDE
+	namespace util {
+		std::string loadFromTextFileToWin32ControlTextFormat(char * file) {
+			std::ifstream input;
+			input.open(file);
+			std::string buffer = "";
+			std::string fileText = "";
+			if (input.is_open()) {
+				while (std::getline(input, buffer)) {
+					fileText += buffer += "\r\n";
+				}
+				input.close();
+			}
+			return fileText;
+		}
+	}
 	class Control {
 	protected:
 		HWND handle;
@@ -73,6 +89,8 @@ namespace gui {
 	};
 #define GUI_TEXTFIELD_VERT_SCROLL (ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL)
 #define GUI_TEXTFIELD_HOR_SCROLL (ES_AUTOHSCROLL | WS_HSCROLL)
+#define GUI_TEXTFIELD_LOAD_FROM_FILE(fileName) ((char*)(util::loadFromTextFileToWin32ControlTextFormat((fileName)).c_str()))
+#define GUI_TEXTFIELD_MULTILINE (ES_MULTI)
 	class TextField : public Control {
 	protected:
 		void init() {

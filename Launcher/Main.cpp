@@ -5,10 +5,12 @@
 #include <ShObjIdl.h>
 #include <ShlGuid.h>
 #include <fstream>
+#include <WinInet.h>
 using namespace gui;
 bool accepted = false;
 char * eula_string;
 int eulaSize;
+#define VERSION 1.2
 void eula() {
 	std::ifstream in;
 	in.open("eula.db", std::ios::binary);
@@ -38,6 +40,7 @@ Page * agreePage;
 Page * homePage;
 Page * playPage;
 Page * settingsPage;
+Page * controlsPage;
 MainPage * main;
 char characterSet[] = "abcdefghijklmnopqrstuvwxyz1234567890";
 void saveSettings() {
@@ -106,11 +109,39 @@ void readSettings() {
 
 	}
 }
+void checkUpdate() {
+	const char url[] = "https://dl.dropboxusercontent.com/s/62uygkt2q703j8r/version.txt?dl=0";
+	DeleteUrlCacheEntry(url);
+	char downloadPath[MAX_PATH];
+	sprintf_s(downloadPath, MAX_PATH, "%s\\Documents\\KFBR\\version.txt", getenv("USERPROFILE"));
+	struct stat exists;
+	if (stat(downloadPath, &exists) == 0) {
+		remove(downloadPath);
+	}
+	HRESULT res = URLDownloadToFile(NULL, url, downloadPath, 0, NULL);
+	if (SUCCEEDED(res)) {
+		std::ifstream in;
+		in.open(downloadPath);
+		if (in.is_open()) {
+			std::string latest;
+			std::getline(in, latest);
+			in.close();
+			double latestVersion = std::stod(latest);
+			if (latestVersion > VERSION) {
+				int response = MessageBox(NULL, "A new update is avaliable. \nWould you like to download it now?", "KFBR", MB_YESNO | MB_ICONQUESTION);
+				if (response == IDYES) {
+					CoInitialize(NULL);
+					ShellExecute(NULL, 0, "https://dl.dropboxusercontent.com/s/pv1tedrmg6r5twb/Installer.exe?dl=0", 0, 0, SW_SHOW);
+					CoUninitialize();
+				}
+			}
+		}
+	}
+}
 char ipCharSet[] = "1234567890.";
 void playGame() {
 	struct stat buffer;
 	if (stat("settings.set", &buffer)) {
-		MessageBox(NULL, "Using defaults", "", MB_OK);
 		defaultSettings();
 	}
 	std::ofstream out;
@@ -126,6 +157,10 @@ void playGame() {
 			MessageBox(NULL, "You must enter an ip!", "KFBR", MB_OK | MB_ICONERROR);
 			return;
 		}
+		if (ip == "offline" || ip == "localhost")
+			ip = "127.0.0.1";
+		else if (ip == "std_server")
+			ip = "67.85.97.119";
 		bool valid = true;
 		int dots = 0;
 		for (char c : ip) {
@@ -183,14 +218,16 @@ LRESULT CALLBACK WindowProc(HWND handle, UINT message, WPARAM wParam, LPARAM lPa
 	switch (message) {
 	case WM_CREATE:
 		image = (HBITMAP)LoadImage(NULL, "bannerSmall.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
-		agreePage = new Page("agreePage", { new Button(280, 700, 50, 20, "Agree", handle, []() {agreeEula(); main->navigateTo(1); }),  new TextField(10, 300, 500, 300, eula_string, handle, false, GUI_TEXTFIELD_VERT_SCROLL), new Label(10, 250, "Please agree to the eula:", handle) });
-		homePage = new Page("homePage", { new Button(200, 300, 200, 50, "Play", handle, []() {main->navigateTo(2); }), new Button(200, 400, 200, 50, "Settings", handle, []() {main->navigateTo(3); }) });
+		agreePage = new Page("agreePage", { new Button(280, 700, 50, 20, "Agree", handle, []() {agreeEula(); main->navigateTo(1); }),  new TextField(10, 300, 500, 300, eula_string, handle, false, GUI_TEXTFIELD_VERT_SCROLL and GUI_TEXTFIELD_HOR_SCROLL), new Label(10, 250, "Please agree to the eula:", handle) });
+		homePage = new Page("homePage", { new Button(200, 300, 200, 50, "Play", handle, []() {main->navigateTo(2); }), new Button(200, 400, 200, 50, "Settings", handle, []() {main->navigateTo(3); }), new Button(
+			200, 500, 200, 50, "Controls", handle, []() {main->navigateTo(4); }), new Label(10, 700, "© Stephen Verderame 2017", handle) });
 		playPage = new Page("playPage", { new Label(200, 250, "Username:", handle), new TextField(200, 300, 200, 20, handle, WS_BORDER), new Label(200, 450, "Ip address:", handle), new TextField(200, 500, 200, 20, handle, WS_BORDER),
 			new Button(200, 700, 200, 50, "Join", handle, playGame), new Button(20, 300, 100, 20, "Back", handle, []() {main->navigateTo(1); }) });
 		settingsPage = new Page("settingsPage", { new Label(10, 250, "Graphics:", handle), new Radiobutton(10, 300, {"Low", "Medium", "High"}, handle), new Button(10, 700, 50, 25, "Back", handle, []() {main->navigateTo(1); }),
 			new Checkbox(300, 300, "Fullscreen", handle), new Label(300, 370, "Resolution: ", handle), new Combobox(300, 400, {"1152 x 648", "1280 x 720", "1366 x 768", "1920 x 1080", "2560 x 1440", "3840 x 2160"}, 100, handle, 3),
-			new Button(250, 700, 100, 50, "Save", handle, []() {saveSettings(); }), new Label(300, 450, "Music Volume: ", handle), new Slider(300, 500, 150, 40, 0, 10, handle) });
-		main = new MainPage({ agreePage, homePage, playPage, settingsPage });
+			new Button(250, 700, 100, 50, "Save", handle, []() {saveSettings(); main->navigateTo(1); }), new Label(300, 450, "Music Volume: ", handle), new Slider(300, 500, 150, 40, 0, 10, handle) });
+		controlsPage = new Page("controlsPage", { new Button(280, 700, 50, 20, "Back", handle, []() {main->navigateTo(1); }), new TextField(10, 300, 500, 400, GUI_TEXTFIELD_LOAD_FROM_FILE("controls.txt"), handle, false, GUI_TEXTFIELD_VERT_SCROLL and GUI_TEXTFIELD_HOR_SCROLL) });
+		main = new MainPage({ agreePage, homePage, playPage, settingsPage, controlsPage });
 		readSettings();
 		if (!accepted) {
 			main->navigateTo(0);
@@ -236,6 +273,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	AdjustWindowRect(&size, WS_OVERLAPPED, FALSE);
 
 	eula();
+	checkUpdate();
 
 	RegisterClassEx(&wc);
 	window = CreateWindowEx(NULL, "KFBRLauncher", "King Frederick's Battle Royale", WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME ^ WS_MAXIMIZEBOX, 300, 300, size.right - size.left, size.bottom - size.top, NULL, NULL, hInstance, NULL);
