@@ -31,7 +31,7 @@ int main() {
 	if (line == "true") {
 		printf("Admin pincode: \n");
 		std::cin >> line;
-		short pincode = atoi(line.c_str());
+		unsigned short pincode = atoi(line.c_str());
 		mode |= GAME_ADMINS;
 		int code = pincode << 16;
 		mode |= code;

@@ -82,12 +82,12 @@ namespace server {
 	std::vector<std::string> ips;
 	std::map<ID, ID> partners;
 	bool teams, admins;
-	short password;
+	unsigned short password;
 	Timer * timer;
 	ServerTime time;
 	unsigned long long arrowId;
 	uint16_t arrowClock = 0;
-	Ringbuffer<arrow_packet> newArrows(100);
+	Ringbuffer<arrow_packet> newArrows(75);
 	int userNum = 0;
 	u_long mode;
 	FD_SET /*readFds, writeFds,*/ exceptFds;
@@ -128,10 +128,9 @@ namespace server {
 		if (it != users.end()) users.erase(it);
 		else printf("Could not delete user from list \n");
 		userNum--;
-		kills[id] = 0;
-		position p = {3000, 0, 3000, -90.0, 0};
-		players[id] = p;
-		partners[id] = MAP_NULL;
+		kills.erase(id);
+		players.erase(id);
+		partners.erase(id);
 		int t = -1;
 		for (int j = 0; j < teamIds.size(); j++) {
 			if (teamIds[j].p1 == id || teamIds[j].p2 == id) {
@@ -142,6 +141,7 @@ namespace server {
 		if (t != -1) teamIds.erase(teamIds.begin() + t);
 		auto itt = std::find(adminList.begin(), adminList.end(), id);
 		if (itt != adminList.end()) adminList.erase(itt);
+		names.erase(id);
 		return SCK_CLOSED;
 	}
 /*	void switchMode(ID id, int sckMode) {
@@ -238,6 +238,8 @@ namespace server {
 								}
 							}
 							names.insert(std::pair<ID, std::string>(i, username));
+							kills.insert(std::pair<ID, int>(i, 0));
+							players.insert(std::pair<ID, position>(i, { -60, 200, 200, 90, 90, 0 }));
 							printf("Alias of %d: %s \n", i, username.c_str());
 							partners.insert(std::pair<ID, ID>(i, MAP_NULL));
 							delete[] name;
@@ -400,10 +402,6 @@ namespace server {
 								newArrows.erase(newArrows.begin(), newArrows.end());
 								arrowClock = 0;
 							}*/
-							unsigned long long lastArrow;
-							switchMode(i, SCK_BLOCK);
-							if (recvData((char*)&lastArrow, sizeof(lastArrow), i) == SCK_CLOSED) continue;
-							switchMode(i, SCK_NO_BLOCK);
 							if (FD_ISSET(users[i], &writeSck)) {
 								int packet = p_arrows;
 								if (sendInt(i, packet) == SCK_CLOSED) continue;
@@ -411,6 +409,7 @@ namespace server {
 								if (sendInt(i, amount) == SCK_CLOSED) continue;
 //								printf("Amount of arrows %d \n", amount);
 								bool crashed = false;
+//								printf("Size of server arrows: %d \n", amount);
 								for (auto it = newArrows.begin(); it != newArrows.end(); it++) {
 //									if ((*it).arrowId <= lastArrow || (*it).shooter == i) continue;									
 									if (sendData((char*)&((*it).y), sizeof((*it).y), i) == SCK_CLOSED) { crashed = true; break;  }
@@ -546,7 +545,7 @@ namespace server {
 							else if (opcode == "admin") {
 								if (admins) {
 									std::string code = c.substr(c.find(' ') + 1);
-									short c_password = atoi(code.c_str());
+									unsigned short c_password = atoi(code.c_str());
 									if (password == c_password) {
 										adminList.push_back(i);
 										printf("Admin login by: %d \n", i);
@@ -617,8 +616,6 @@ namespace server {
 		SOCKET sck_connection;
 		SOCKADDR_IN address, clientAddr;
 		sck_server = socket(AF_INET, SOCK_STREAM, NULL);
-		u_long mode = 1;
-		ioctlsocket(sck_server, FIONBIO, &mode);
 		address.sin_addr.s_addr = INADDR_ANY;
 		address.sin_family = AF_INET;
 		address.sin_port = htons(8302);
@@ -639,7 +636,9 @@ namespace server {
 			password = gameMode >> 16;
 			printf("Password %d \n", password);
 			banList = readBans();
-		}		
+		}
+		u_long mode = 1;
+		ioctlsocket(sck_server, FIONBIO, &mode);
 		printf("Server started!! \n");
 		while (true) {
 			FD_ZERO(&readSck);
@@ -667,6 +666,9 @@ namespace server {
 					}
 					else printf("Client %s is banned! \n", ip.c_str());
 					
+				}
+				else {
+					printf("Client not accepted with error code %d \n", WSAGetLastError());
 				}
 			}
 			else if (FD_ISSET(sck_server, &exceptFds)) {
