@@ -162,12 +162,17 @@ namespace client {
 			printf("sent command! %s \n", command.c_str());
 		}
 	}
-	void sendName(char * name) {
+	int sendName(char * name) {
 		if (FD_ISSET(sck_connection, &write)) {
 			Packet packet = p_name;
-			V_IF(sendInt(sck_connection, packet));
-			V_IF(sendInt(sck_connection, strlen(name)));
-			V_IF(sendData(name, strlen(name), sck_connection));
+			IF(sendInt(sck_connection, packet));
+			IF(sendInt(sck_connection, strlen(name)));
+			IF(sendData(name, strlen(name), sck_connection));
+			return 0;
+		}
+		else {
+			closed = true;
+			return SCK_FD_NOT_SET;
 		}
 	}
 	void startLoop() {

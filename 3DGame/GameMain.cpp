@@ -186,7 +186,8 @@ using namespace Game;
 	void processInput(GLFWwindow * window) {
 		if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
 			printf("Escape!\n");
-			client::shutdown();
+//			client::shutdown();
+			scene->shutdown();
 			glfwSetWindowShouldClose(window, true);
 		}
 		else if (glfwGetKey(window, GLFW_KEY_SLASH) == GLFW_PRESS && !typing) {			
@@ -371,8 +372,8 @@ using namespace Game;
 		return 0;
 	}
 #pragma endregion
-//	int main() {
-	int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdShow){
+	int main() {
+//	int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdShow){
 		printf("Console on \n");
 		if(readSettings() != 0) return 3;
 		if(readLogin() != 0) return 4;
@@ -500,10 +501,10 @@ using namespace Game;
 		float near_plane = 30.0f, far_plane = 120.0f;
 		SHADER_SET_FLOAT(shader->id, "near_plane", near_plane);
 		SHADER_SET_FLOAT(shader->id, "far_plane", far_plane);
-		client::startup(ip);
-		client::sendName(username);
-		client::startLoop();
-		scene = sceneFactory(0);
+//		client::startup(ip);
+//		client::sendName(username);
+//		client::startLoop();
+		scene = sceneFactory(0, username, ip);
 
 
 		createBuffers();
@@ -550,12 +551,12 @@ using namespace Game;
 		}
 		glm::mat4 hdrProjection = glm::ortho(0.0f, (float)SCR_WIDTH, 0.0f, (float)SCR_HEIGHT);
 		while (!glfwWindowShouldClose(window)) {
-			if (client::getServerTime(time) != 0) {
-				time = glfwGetTime();
-			}
+//			if (/*client::getServerTime(time) != 0*/) {
+			time = scene->getTime();//glfwGetTime();
+//			}
 			deltaTime = time - lastTime;
 			lastTime = time;
-			client::startLoop();			
+//			client::startLoop();			
 //			if (graphics) {
 			USE_SHADER(depthShader.id);
 			SHADER_SET_MAT4(depthShader.id, "lightSpaceMat", lightSpaceTransform);
@@ -597,7 +598,8 @@ using namespace Game;
 			glBindTexture(GL_TEXTURE_2D, hdrTexture);
 //			glBindTexture(GL_TEXTURE_2D, depthTexture);
 			t_clock time{ -2, 0 };
-			client::getTime(time);
+//			client::getTime(time);
+			scene->getTimer(time);
 			if (time.minutes == 0 && time.seconds == 0) {
 				if (!winner) PlaySound("Assets/sounds/victory.wav", NULL, SND_FILENAME | SND_ASYNC);
 				winner = true;
@@ -657,20 +659,21 @@ using namespace Game;
 			SHADER_SET_VEC4(hdrFrame, "red", glm::vec4(red, 1.f, 1.f, 1.f));
 			char msg[50];
 			sprintf_s(msg, 50, "Health: %d", scene->player.health);
-			renderText(hdrFrame, msg, 10, SCR_HEIGHT - 100, SCR_WIDTH / 1920, glm::vec3(1, 0, 0));
+			renderText(hdrFrame, msg, 10, SCR_HEIGHT - 100, SCR_WIDTH / 1920.0, glm::vec3(1, 0, 0));
 			sprintf_s(msg, 50, "Arrows: %d", arrows);
 			renderText(hdrFrame, msg, SCR_WIDTH - 500, SCR_HEIGHT - 100, SCR_WIDTH / 1920.0, glm::vec3(1, 0, 0));
 			sprintf_s(msg, 50, "Kills: %d", scene->getKills());
 			renderText(hdrFrame, msg, SCR_WIDTH - 500, SCR_HEIGHT - 50, SCR_WIDTH / 1920.0, glm::vec3(0, .75, 1));
 			int leaderKills;
 			std::string leaderName;
-			if (client::getLeader(leaderKills, leaderName) != 0) {
+//			if (/*client::getLeader(leaderKills, leaderName) != 0*/) {
 				leaderKills = 0;
 				leaderName = "offline";
-			}
+				scene->getLeader(leaderKills, leaderName);
+//			}
 			if (!winner) {
 				sprintf_s(msg, 50, "Leader: %s : %d kills", leaderName.c_str(), leaderKills);
-				renderText(hdrFrame, msg, 10, SCR_HEIGHT - 50, SCR_WIDTH / 1920, glm::vec3(0, .75, 1));
+				renderText(hdrFrame, msg, 10, SCR_HEIGHT - 50, SCR_WIDTH / 1920.0, glm::vec3(0, .75, 1));
 				if (M_DISTANCE(glm::vec3(0, -2, 20), cam.Position + cam.Front) < 1 && scene->player.health < 84) {
 					healable = true;
 					suppliable = false;
@@ -686,23 +689,23 @@ using namespace Game;
 					healable = false; suppliable = false;
 				}
 				if (M_DISTANCE_SQUARED(glm::vec3(0.038, 0.83, 5.87), cam.Position + cam.Front) < 2.89) {
-					renderText(hdrFrame, "Press e to enter castle", SCR_WIDTH / 3, SCR_HEIGHT / 2, SCR_WIDTH / 1920.0, glm::vec3(1));
+					renderText(hdrFrame, "Press e to enter castle", SCR_WIDTH / 3.0, SCR_HEIGHT / 2.0, SCR_WIDTH / 1920.0, glm::vec3(1));
 					if (GetKeyState('E') < 0) { cam.Position = glm::vec3(-0.128, 1.3, 3.49); cam.oldPos = cam.Position; }
 				}
 				else if (M_DISTANCE_SQUARED(glm::vec3(1.43, 1.36, 2.9), cam.Position + cam.Front) < 2.25) {
-					renderText(hdrFrame, "Press f to climb tower", SCR_WIDTH / 3, SCR_HEIGHT / 2, SCR_WIDTH / 1920.0, glm::vec3(1));
+					renderText(hdrFrame, "Press f to climb tower", SCR_WIDTH / 3.0, SCR_HEIGHT / 2.0, SCR_WIDTH / 1920.0, glm::vec3(1));
 					if (GetKeyState('F') < 0) { cam.Position = glm::vec3(2.169, 6.44, 4.02); cam.oldPos = cam.Position; }
 				}
 				else if (M_DISTANCE_SQUARED(glm::vec3(-2.68, 1.6, 3.1), cam.Position + cam.Front) < 2.25) {
-					renderText(hdrFrame, "Press f to climb tower", SCR_WIDTH / 3, SCR_HEIGHT / 2, SCR_WIDTH / 1920.0, glm::vec3(1));
+					renderText(hdrFrame, "Press f to climb tower", SCR_WIDTH / 3.0, SCR_HEIGHT / 2.0, SCR_WIDTH / 1920.0, glm::vec3(1));
 					if (GetKeyState('F') < 0) { cam.Position = glm::vec3(-3.16, 8.8, -4.3); cam.oldPos = cam.Position; }
 				}
 				else if (M_DISTANCE_SQUARED(glm::vec3(0.77, 1.7, 1.12), cam.Position + cam.Front) < 2.25) {
-					renderText(hdrFrame, "Press f to call doctor", SCR_WIDTH / 3, SCR_HEIGHT / 2, SCR_WIDTH / 1920.0, glm::vec3(1));
+					renderText(hdrFrame, "Press f to call doctor", SCR_WIDTH / 3.0, SCR_HEIGHT / 2.0, SCR_WIDTH / 1920.0, glm::vec3(1));
 					if (GetKeyState('F') < 0) scene->player.health = 120;
 				}
 				else if (M_DISTANCE_SQUARED(glm::vec3(-33, -2, 20), cam.Position + cam.Front) < 2.89) {
-					renderText(hdrFrame, "Press f to climb tower", SCR_WIDTH / 3, SCR_HEIGHT / 2, SCR_WIDTH / 1920.0, glm::vec3(1));
+					renderText(hdrFrame, "Press f to climb tower", SCR_WIDTH / 3.0, SCR_HEIGHT / 2.0, SCR_WIDTH / 1920.0, glm::vec3(1));
 					if (GetKeyState('F') < 0) { cam.Position = glm::vec3(-29, 6.2, 20); cam.oldPos = cam.Position; }
 				}
 				if (typing) {
@@ -711,16 +714,15 @@ using namespace Game;
 					buffer.append(command);
 					renderText(hdrFrame, buffer, SCR_WIDTH / 20.0, SCR_HEIGHT / 12.0, SCR_HEIGHT / 2160.0, glm::vec3(1));
 				}
-				char * name;
-				if (client::getName(&name) == 0) {
+				std::string name = scene->getName();
+//				if (/*client::getName(&name) == 0*/) {
 					renderText(hdrFrame, name, SCR_WIDTH / 20.0, SCR_HEIGHT / 20.0, SCR_HEIGHT / 1080.0, glm::vec3(1, 1, 0));
-					delete[] name;
-				}
+//				}
 				
 			}
 			else {
 				sprintf_s(msg, 50, "%s won with %d kills!!!", leaderName.c_str(), leaderKills);
-				renderText(hdrFrame, msg, SCR_WIDTH / 2 - SCR_WIDTH / 8, SCR_HEIGHT /2 + SCR_HEIGHT / 4, SCR_WIDTH / 1920.0, glm::vec3(.83, .68, .22));
+				renderText(hdrFrame, msg, SCR_WIDTH / 2.0 - SCR_WIDTH / 8.0, SCR_HEIGHT /2.0 + SCR_HEIGHT / 4.0, SCR_WIDTH / 1920.0, glm::vec3(.83, .68, .22));
 				playing = false;
 			}
 			if (time.minutes != -2) {
@@ -730,7 +732,7 @@ using namespace Game;
 				else {
 					sprintf_s(msg, 50, "%d:%d", time.minutes, time.seconds);
 				}
-				renderText(hdrFrame, msg, SCR_WIDTH / 2, SCR_HEIGHT - 50, SCR_WIDTH / 1920.0, glm::vec3(0, 1, 0));
+				renderText(hdrFrame, msg, SCR_WIDTH / 2.0, SCR_HEIGHT - 50, SCR_WIDTH / 1920.0, glm::vec3(0, 1, 0));
 			}
 			if (frames >= fps) {
 				fps = frames / (glfwGetTime() - fpsChange);
@@ -738,7 +740,7 @@ using namespace Game;
 				fpsChange = glfwGetTime();
 			}
 			sprintf_s(msg, 50, "Fps: %d", fps);
-			renderText(hdrFrame, msg, SCR_WIDTH - SCR_WIDTH / 10, SCR_HEIGHT / 13, SCR_WIDTH / 1920, glm::vec3(1));
+			renderText(hdrFrame, msg, SCR_WIDTH - SCR_WIDTH / 10.0, SCR_HEIGHT / 13, SCR_WIDTH / 1920.0, glm::vec3(1));
 			SHADER_SET_BOOL(hdrFrame, "mainQuad", true);
 			renderQuad();
 			SHADER_SET_BOOL(hdrFrame, "mainQuad", false);
@@ -749,7 +751,8 @@ using namespace Game;
 			{
 				std::lock_guard<std::mutex> guard(mu);
 				if (sendCommand && command.size() > 0) {
-					client::sendCommand(command);
+//					client::sendCommand(command);
+					scene->sendCommand(command);
 					command = "";
 					sendCommand = false;
 				}

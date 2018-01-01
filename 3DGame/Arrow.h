@@ -28,9 +28,9 @@ namespace Game {
 	public:
 		Arrow() {};
 		Arrow(const arrow_packet & arrow) : pos(glm::vec3(arrow.x, arrow.y, arrow.z)), velocity(glm::vec3(arrow.velX, arrow.velY, arrow.velZ)),
-			clock(arrow.clock), shooter(arrow.shooter), isLive(arrow.isLive){}
-		Arrow(const Arrow & other): arrow(other.arrow), pos(other.pos), velocity(other.velocity), clock(other.clock), angle(other.angle), isLive(other.isLive), shooter(other.shooter), dt(other.dt){}
-		Arrow(const Camera & cam, const Model arrow, uint16_t shooter) : arrow(arrow), shooter(shooter) {
+			clock(arrow.clock), shooter(arrow.shooter), isLive(arrow.isLive), id(arrow.arrowId){}
+		Arrow(const Arrow & other): arrow(other.arrow), pos(other.pos), velocity(other.velocity), clock(other.clock), angle(other.angle), isLive(other.isLive), shooter(other.shooter), dt(other.dt), id(other.id){}
+		Arrow(const Camera & cam, const Model arrow, uint16_t shooter, double clock) : arrow(arrow), shooter(shooter), clock(clock) {
 			isLive = true;
 			int xfactor = (cam.Front.z > 0) ? -1 : 1;
 			int zfactor = (cam.Front.x < 0) ? -1 : 1;
@@ -41,18 +41,18 @@ namespace Game {
 			else {
 				velocity = cam.lastFront;
 			}
-			if (client::getServerTime(clock) != 0) {
+/*			if (client::getServerTime(clock) != 0) {
 				clock = glfwGetTime();
-			}
+			}*/
 		}
-		void draw(Shader shader, float dt, char shadowParams) {
+		void draw(Shader shader, float dt, char shadowParams, double timeNow) {
 			if (!(shadowParams & ARROW_DEPTH_PASS) || (shadowParams & ARROW_HAS_SHADOW)) {
 				glm::mat4 model = glm::mat4();
 				double gravity = 8;
-				double timeNow;
+/*				double timeNow;
 				if (client::getServerTime(timeNow) != 0) {
 					timeNow = glfwGetTime();
-				}
+				}*/
 				if (isLive) {
 					velocity.y = velocity.y - (gravity * ((timeNow - clock) / 1000.0));
 					pos += velocity * glm::vec3(20) * glm::vec3(dt);

@@ -13,7 +13,9 @@
 #include "Arrow.h"
 #include <string>
 #include <fstream>
-#define skySize 1.0f
+#include <thread>
+#include <mutex>
+#include <queue>
 namespace Game {
 #pragma region Util
 	#define vectorAdapter(vec) (irrklang::vec3df {(vec).x, (vec).y, (vec).z})
@@ -95,47 +97,47 @@ namespace Game {
 	private:
 		float skyboxVertices[144] = {
 			// positions          
-			-skySize,  skySize, -skySize,
-			-skySize, -skySize, -skySize,
-			skySize, -skySize, -skySize,
-			skySize, -skySize, -skySize,
-			skySize,  skySize, -skySize,
-			-skySize, skySize, -skySize,
+			-1.0f,  1.0f, -1.0f,
+			-1.0f, -1.0f, -1.0f,
+			1.0f, -1.0f, -1.0f,
+			1.0f, -1.0f, -1.0f,
+			1.0f,  1.0f, -1.0f,
+			-1.0f, 1.0f, -1.0f,
 
-			-skySize, -skySize,  skySize,
-			-skySize, -skySize, -skySize,
-			-skySize,  skySize, -skySize,
-			-skySize,  skySize, -skySize,
-			-skySize,  skySize,  skySize,
-			-skySize, -skySize,  skySize,
+			-1.0f, -1.0f,  1.0f,
+			-1.0f, -1.0f, -1.0f,
+			-1.0f,  1.0f, -1.0f,
+			-1.0f,  1.0f, -1.0f,
+			-1.0f,  1.0f,  1.0f,
+			-1.0f, -1.0f,  1.0f,
 
-			skySize, -skySize, -skySize,
-			skySize, -skySize,  skySize,
-			skySize,  skySize,  skySize,
-			skySize,  skySize, skySize,
-			skySize,  skySize, -skySize,
-			skySize, -skySize, -skySize,
+			1.0f, -1.0f, -1.0f,
+			1.0f, -1.0f,  1.0f,
+			1.0f,  1.0f,  1.0f,
+			1.0f,  1.0f, 1.0f,
+			1.0f,  1.0f, -1.0f,
+			1.0f, -1.0f, -1.0f,
 
-			-skySize, -skySize,  skySize,
-			-skySize,  skySize,  skySize,
-			skySize,  skySize,  skySize,
-			skySize,  skySize,  skySize,
-			skySize, -skySize,  skySize,
-			-skySize, -skySize,  skySize,
+			-1.0f, -1.0f,  1.0f,
+			-1.0f,  1.0f,  1.0f,
+			1.0f,  1.0f,  1.0f,
+			1.0f,  1.0f,  1.0f,
+			1.0f, -1.0f,  1.0f,
+			-1.0f, -1.0f,  1.0f,
 
-			-skySize,  skySize, -skySize,
-			skySize,  skySize, -skySize,
-			skySize,  skySize, skySize,
-			skySize,  skySize,  skySize,
-			-skySize,  skySize,  skySize,
-			-skySize,  skySize, -skySize,
+			-1.0f,  1.0f, -1.0f,
+			1.0f,  1.0f, -1.0f,
+			1.0f,  1.0f, 1.0f,
+			1.0f,  1.0f,  1.0f,
+			-1.0f,  1.0f,  1.0f,
+			-1.0f,  1.0f, -1.0f,
 
-			-skySize, -skySize, -skySize,
-			-skySize, -skySize,  skySize,
-			skySize, -skySize, -skySize,
-			skySize, -skySize, -skySize,
-			-skySize, -skySize,  skySize,
-			skySize, -skySize,  skySize
+			-1.0f, -1.0f, -1.0f,
+			-1.0f, -1.0f,  1.0f,
+			1.0f, -1.0f, -1.0f,
+			1.0f, -1.0f, -1.0f,
+			-1.0f, -1.0f,  1.0f,
+			1.0f, -1.0f,  1.0f
 		};
 		unsigned int skyVAO, skyVBO;
 		unsigned int skyCube;
@@ -312,6 +314,10 @@ namespace Game {
 		unsigned int size;
 		Shader * markerShader;
 	public:
+		~Marker() {
+			free(points);
+			delete markerShader;
+		}
 		Marker(Shader ** markerShader, int amount) {
 			this->markerShader = *markerShader;
 			size = amount;
@@ -434,16 +440,211 @@ namespace Game {
 		}
 	};
 #pragma endregion
+	std::mutex arrowMutex;
+	std::mutex timeMutex;
+	std::mutex positionMutex;
+	std::mutex backupMutex;
+	std::mutex deathMutex;
+	class threadLock {
+	private:
+		std::mutex mu;
+		bool isLocked;
+	public:
+		threadLock(): isLocked(false) {}
+		operator bool() {
+			std::lock_guard<std::mutex> guard(mu);
+			return isLocked;
+		}
+		void operator=(bool value) {
+			std::lock_guard<std::mutex> guard(mu);
+			isLocked = value; 
+		}
+	};
+#define UNLOCKED(ThreadLock) (!ThreadLock)
+#define LOCKED(ThreadLock) (ThreadLock)
+#define THREAD_UPDATE_MULTIPLE 1
+#define THREAD_UPDATE_SINGLE 0
+#define THREAD_WAIT_UNTIL(ThreadLock) while(ThreadLock) {}
+	class threadUpdate {
+	private:
+		std::mutex mu;
+		int type;
+		bool notification;
+		int notifications;
+	public:
+		threadUpdate() : notification(0), type(0) {}
+		threadUpdate(int type) : notification(0), notifications(0), type(type) {}
+		void notify() {
+			std::lock_guard<std::mutex> guard(mu);
+			if (type) notifications++;
+			else notification = true;
+		}
+		void handleNotification() {
+			std::lock_guard<std::mutex> guard(mu);
+			if (type) notifications--;
+			else notification = false;
+		}
+		int getNotifications() {
+			std::lock_guard<std::mutex> guard(mu);
+			if (type) return notifications;
+			return notification;
+		}
+	};
 	class Scene {
+	private:
+		position user;
+		std::vector<position> positions;
+		int kills = 0;
+		int leaderKills = 0;
+		std::string leaderName = "";
+		double serverTime = 0;
+		double pcTime = 0;
+		std::vector<arrow_packet> serverArrows;
+		Arrow deathArrow;
+		std::string username = "";
+		bool isTimed = true;
+		t_clock time;
 	protected:
+		threadLock playerLock, arrowLock, serverArrowLock, leaderLock, killsLock, backupLock, nameLock, timeLock, commandLock;
+		threadUpdate playerCond, arrowCond, leaderCond, killsCond, deathCond, leaveCond, commandCond;
 		Ringbuffer<Arrow> * arrows;
 		irrklang::ISoundEngine * soundEngine;
 		char * name;
 		std::vector<position> players;
 		std::vector<double> playerMoves;
 		int err;
+		std::vector<Arrow> allArrows;
+		std::vector<Arrow> lastServerArrows;
+		std::queue<unsigned long long> arrowIds;
+		std::queue<arrow_packet> arrowsToBeAdded;
+		int lastKills, lastLeaderKills;
+		std::string lastLeaderName, lastName;
+		t_clock lastTime;
+		std::string newCommand = "";
 	public:
 		Player player;
+		bool connected;
+	public:
+		void conversationThread() {
+			client::getPid(player.pid);
+			while (true) {
+				client::startLoop();
+				if (UNLOCKED(timeLock) && isTimed) {
+					timeLock = true;
+					client::getTime(time);
+					if (time.minutes == -2 && time.seconds == 0) isTimed = false;
+					timeLock = false;
+				}
+				std::unique_lock<std::mutex> timeLock(timeMutex);
+				client::getServerTime(serverTime);
+				pcTime = glfwGetTime(); //glfwGetTime() is thread safe
+				timeLock.unlock();
+
+				std::unique_lock<std::mutex> arrLock(arrowMutex);
+				if (arrowIds.size() <= 5) {
+					for (int i = arrowIds.size(); i < 10; i++) {
+						unsigned long long id;
+						client::getNewArrowId(id);
+						arrowIds.push(id);
+					}
+				}
+				arrLock.unlock();
+
+				std::unique_lock<std::mutex> posLock(positionMutex);
+				client::sendPos(user);
+				posLock.unlock();
+				
+				THREAD_WAIT_UNTIL(playerLock);
+				playerLock = true;
+				client::getPos(positions);
+				playerCond.notify();
+				playerLock = false;
+
+				THREAD_WAIT_UNTIL(arrowLock);
+				arrowLock = true;
+				std::vector<arrow_packet> sendToArrows;
+				for (auto it = arrows->begin(); it != arrows->end(); it++) {
+					sendToArrows.push_back((*it).toPacket());
+				}
+				arrowLock = false;
+				
+				THREAD_WAIT_UNTIL(backupLock);
+				if (arrowsToBeAdded.size() > 0) {
+					while (!arrowsToBeAdded.empty()) {
+						sendToArrows.push_back(arrowsToBeAdded.front());
+						arrowsToBeAdded.pop();
+					}
+				}
+//				printf("Sending %d arrows: ", sendToArrows.size());
+				for (int i = 0; i < sendToArrows.size(); i++) {
+//					printf("%d ", sendToArrows[i].arrowId);
+					client::sendExistingArrow(sendToArrows[i]);
+				}
+//				printf("\n");
+				THREAD_WAIT_UNTIL(serverArrowLock);
+				serverArrowLock = true;
+				serverArrows.erase(serverArrows.begin(), serverArrows.end());
+				client::getArrows(serverArrows);
+				arrowCond.notify();
+				serverArrowLock = false;
+
+				if (UNLOCKED(killsLock)) {
+					killsLock = true;
+					client::getKills(kills);
+					killsCond.notify();
+					killsLock = false;
+				}
+				if (UNLOCKED(leaderLock)) {
+					leaderLock = true;
+					client::getLeader(leaderKills, leaderName);
+					leaderCond.notify();
+					leaderLock = false;
+				}
+				if (UNLOCKED(nameLock)) {
+					nameLock = true;
+					char * _name;
+					client::getName(&_name);
+					username = _name;
+					delete[] _name;
+					nameLock = false;
+
+				}
+				if (deathCond.getNotifications()) {
+					client::notifyDeath(deathArrow.toPacket());
+					deathCond.handleNotification();
+				}
+				if (commandCond.getNotifications() && commandLock == false) {
+					commandLock = true;
+					client::sendCommand(newCommand);
+					commandCond.handleNotification();
+					commandLock = false;
+				}
+				if (leaveCond.getNotifications()) {
+					client::shutdown();
+					break;
+				}
+
+			}
+
+		}
+	protected:
+		void setPos(position & pos) {
+			std::lock_guard<std::mutex> posLock(positionMutex);
+			user = pos;
+		}
+		void died(Arrow & died) {
+			std::lock_guard<std::mutex> deathLock(deathMutex);
+			deathArrow = died;
+			deathCond.notify();
+		}
+		void loadPlayers() {
+			if (UNLOCKED(playerLock) && playerCond.getNotifications()) {
+				playerLock = true;
+				players = positions;
+				playerCond.handleNotification();
+				playerLock = false;
+			}
+		}
 	public:
 		Scene() {
 			soundEngine = irrklang::createIrrKlangDevice();
@@ -451,6 +652,40 @@ namespace Game {
 		}
 		~Scene() {
 			delete arrows;
+		}
+		double getTime() {			
+			if (connected) {
+				std::lock_guard<std::mutex> guard(timeMutex);
+				double offset = serverTime - pcTime;
+				return glfwGetTime() + offset;
+			}
+			return glfwGetTime();
+		}
+		void getTimer(t_clock & tclock) {
+			if (connected) {
+				if (UNLOCKED(timeLock)) {
+					timeLock = true;
+					lastTime = time;
+					timeLock = false;
+				}
+				tclock = lastTime;
+			}
+			else {
+				tclock = { -2, 0 };
+			}
+		}
+		void sendCommand(std::string ncommand) {
+			if (connected) {
+				if (UNLOCKED(commandLock)) {
+					commandLock = true;
+					newCommand = ncommand;
+					commandCond.notify();
+					commandLock = false;
+				}
+			}
+		}
+		inline void shutdown() {
+			leaveCond.notify();
 		}
 		virtual void addArrow(Camera & cam) = 0;
 		inline bool getDamage() {
@@ -479,9 +714,51 @@ namespace Game {
 		}
 		
 		int getKills() {
-			int kills;
-			if (client::getKills(kills) != 0) return 0;
-			return kills;
+			if (!connected) return 0;
+			if (UNLOCKED(killsLock) && killsCond.getNotifications()) {
+				killsLock = true;
+				lastKills = kills;
+				killsCond.handleNotification();
+				killsLock = false;
+			}
+			return lastKills;
+		}
+		void getLeader(int & leaderKills, std::string & leaderName) {
+			if (!connected) {
+				leaderKills = 0;
+				leaderName = "offline";
+				return;
+			}
+			if (UNLOCKED(leaderLock) && leaderCond.getNotifications()) {
+				leaderLock = true;
+				lastLeaderKills = this->leaderKills;
+				lastLeaderName = this->leaderName;
+				leaderCond.handleNotification();
+				leaderLock = false;
+			}
+			leaderKills = lastLeaderKills;
+			leaderName = lastLeaderName;
+		}
+		std::vector<Arrow> getServerArrows() {
+			if (!connected) return std::vector<Arrow>();
+			if (UNLOCKED(serverArrowLock)) {
+				serverArrowLock = true;
+				lastServerArrows.erase(lastServerArrows.begin(), lastServerArrows.end());
+				for (int i = 0; i < serverArrows.size(); i++) {
+					lastServerArrows.push_back(serverArrows[i]);
+				}
+				serverArrowLock = false;
+			}
+			return lastServerArrows;
+		}
+		std::string getName() {
+			if (!connected) return "";
+			if (UNLOCKED(nameLock)) {
+				nameLock = true;
+				lastName = username;
+				nameLock = false;
+			}
+			return lastName;
 		}
 		inline void reset(Camera & cam) {
 			player.health = 100;
@@ -502,8 +779,6 @@ namespace Game {
 		glm::mat4 _model;
 		int overflow = 0;
 		std::vector<BoundingBox> hitBoxes;
-		std::vector<arrow_packet> serverArrows;
-		std::vector<Arrow> allArrows;
 		bool firstPass = true;
 		int err = 1;
 		unsigned int houseNormal; 
@@ -512,12 +787,12 @@ namespace Game {
 		Marker * marker;
 		bool canPlay = true;
 		double lastInjury = 0;
+		unsigned int knightTexture;
 	public:
 		~Scene1() {
-			delete markerShader;
 			delete marker;
 		}
-		Scene1() {
+		Scene1(char * username, char * ip) {
 			name = "scene1";
 			castle.init("Assets/Castle X6.obj");
 			house.init("Assets/house_obj.obj");
@@ -537,9 +812,19 @@ namespace Game {
 			wall.addTexture("Assets/brickwall_normal.jpg", "normal");
 			arrows = new Ringbuffer<Arrow>(12);
 			houseNormal = loadTexture("Assets/house_normal.tga");
+			knightTexture = loadTexture("Assets/chevalier.bmp");
 			markerShader = new Shader("simple.glslbin", "simple.fragbin", true);
 			marker = new Marker(&markerShader, 1);
-			client::getPid(player.pid);
+			client::startup(ip);
+			if (client::sendName(username) == 0) {
+				connected = true;
+				std::thread t(&Scene::conversationThread, this);
+				t.detach();
+			}
+			else {
+				connected = false;
+			}
+//			client::getPid(player.pid);
 //			loadSound("Assets/sounds/arrowShoot.wav", &soundList.list[soundList.s_arrowShoot], soundList.sizes[soundList.s_arrowShoot]);
 //			hitBoxes.push_back(BoundingBox(glm::vec3(-28, -3, -0.8), glm::vec3(-22, 1, 2.2)));
 #pragma region defineBoxes
@@ -629,15 +914,31 @@ namespace Game {
 #pragma endregion
 
 		}
-		inline void addArrow(Camera & cam) {
+		void addArrow(Camera & cam) {
 			soundEngine->play2D("Assets/sounds/arrowShoot.wav");
-			Arrow arr = Arrow(cam, arrow, player.pid);
-			if(client::getNewArrowId(arr.getId()) != 0) arr.getId() = 0;
-			printf("New arrow with id: %d \n", arr.getId());
+			Arrow arr = Arrow(cam, arrow, player.pid, getTime());
+//			if(client::getNewArrowId(arr.getId()) != 0) arr.getId() = 0;
 			arr.newShot = true;
-			arrows->addElement(arr);
-			
-			
+			if (connected) {
+				std::lock_guard<std::mutex> guard(arrowMutex);
+				arr.getId() = arrowIds.front();
+				arrowIds.pop();
+			}
+			else arr.getId() = 0;
+			printf("New arrow with id %d \n", arr.getId());
+			if (UNLOCKED(arrowLock)) {
+				arrowLock = true;
+				printf("Added to ringbuffer \n");
+				arrows->addElement(arr);
+				arrowLock = false;
+			}
+			else {
+				backupLock = true;
+				printf("Pushed onto arr to be added \n");
+				arrowsToBeAdded.push(arr.toPacket());
+				allArrows.push_back(arr);
+				backupLock = false;
+			}			
 		}
 		void renderScene(Shader shader, bool depthPass, Camera & cam, float dt, int graphics, glm::mat4 view = glm::mat4(), glm::mat4 projection = glm::mat4()) {
 			if (!canPlay) return;
@@ -956,29 +1257,33 @@ namespace Game {
 				model = glm::rotate(model, glm::radians(-6.3f), glm::vec3(0.0, 0.0, 1.0));
 				SHADER_SET_MAT4(shader, "model", model);("model", model);
 				bow.Draw(shader);
-				for (auto it = arrows->begin(); it != arrows->end(); it++) {
-					if ((*it).newShot) (*it).newShot = false;
-					client::sendExistingArrow((*it).toPacket());
-					(*it).draw(shader, dt, depthPass);
-					glm::vec3 point = (*it).getPoint();
-					if ((*it).isAlive()) {
-						if (point.y < -2.92) {
-							(*it).collide();
-							soundEngine->play3D("Assets/sounds/arrow-impact.wav", vectorAdapter(point - cam.Position));
-						}
-						else {
-							for (int i = 0; i < hitBoxes.size(); i++) {
-								if (hitBoxes[i][point]) {
-									(*it).collide();
-									soundEngine->play3D("Assets/sounds/arrow-impact.wav", vectorAdapter(point - cam.Position));
-									break;
+				if (UNLOCKED(arrowLock)) {
+					arrowLock = true;
+//					printf("Handling arrows size: %d \n", arrows->getSize());
+					for (auto it = arrows->begin(); it != arrows->end(); it++) {
+						if ((*it).newShot) (*it).newShot = false;
+						//					client::sendExistingArrow((*it).toPacket());
+						(*it).draw(shader, dt, depthPass, getTime());
+						glm::vec3 point = (*it).getPoint();
+						if ((*it).isAlive()) {
+							if (point.y < -2.92) {
+								(*it).collide();
+								soundEngine->play3D("Assets/sounds/arrow-impact.wav", vectorAdapter(point - cam.Position));
+							}
+							else {
+								for (int i = 0; i < hitBoxes.size(); i++) {
+									if (hitBoxes[i][point]) {
+										(*it).collide();
+										soundEngine->play3D("Assets/sounds/arrow-impact.wav", vectorAdapter(point - cam.Position));
+										break;
+									}
 								}
 							}
 						}
 					}
+					arrowLock = false;
 				}
-				serverArrows.erase(serverArrows.begin(), serverArrows.end());
-				if (client::getArrows(serverArrows) != 0) {
+				if (connected == false/*client::getArrows(serverArrows) != 0*/) {
 					//offline
 					allArrows.erase(allArrows.begin(), allArrows.end());
 					for (auto it = arrows->begin(); it != arrows->end(); it++) {
@@ -987,6 +1292,7 @@ namespace Game {
 					}
 				}
 				else {
+					std::vector<Arrow> serverArrows = getServerArrows();
 					allArrows.erase(allArrows.begin(), allArrows.end());
 //					printf("Size of server arrows: %d \n", serverArrows.size());
 					for (int i = 0; i < serverArrows.size(); i++) {
@@ -1002,19 +1308,20 @@ namespace Game {
 				}
 				for (auto it = allArrows.begin(); it != allArrows.end(); it++) {
 					//				if (graphics == 1 && depthPass == false) {
-					(*it).draw(shader, dt, depthPass);
+					(*it).draw(shader, dt, depthPass, getTime());
 					//				}else if(!depthPass || graphics != 1) (*it).draw(shader, dt, depthPass);
 					glm::vec3 point = (*it).getPoint();
 					if ((*it).isAlive() && ((*it).getShooter() != player.pid && (*it).getShooter() != 35000)) {
-						if (M_DISTANCE(point, cam.Position) < 0.5 && glfwGetTime() - lastInjury > 1) {
-							client::stopArrow((*it).getId());
+						if (M_DISTANCE(point, cam.Position) < 0.65 && glfwGetTime() - lastInjury > 1) {
+//							client::stopArrow((*it).getId());
 							lastInjury = glfwGetTime();
 							player.health -= 25;
 							player.takeDamage();
 							soundEngine->play2D("Assets/sounds/arrow-impact.wav");
 							//						(*it).collide();
 							if (player.health <= 0) {
-								client::notifyDeath((*it).toPacket());
+//								client::notifyDeath((*it).toPacket());
+								died((*it));
 							}
 						}
 					}
@@ -1028,29 +1335,34 @@ namespace Game {
 				if (cam.look) {
 					posNow.yaw = cam.b4LookYaw;
 				}
-				int send = client::sendPos(posNow);
-				if (send != 0 && send != SCK_CLOSED) printf("Error code %i while sending player positions! \n", send);
+				setPos(posNow);
+//				int send = client::sendPos(posNow);
+/*				if (send != 0 && send != SCK_CLOSED) printf("Error code %i while sending player positions! \n", send);
 
-				err = client::getPos(players);
-				if (err != 0 && err != SCK_CLOSED) printf("Error code %i while getting player positions! \n", err);
+//				err = client::getPos(players);
+				if (err != 0 && err != SCK_CLOSED) printf("Error code %i while getting player positions! \n", err);*/
+				loadPlayers();
 				if (players.size() > 0) {
 					int i = 0;
 					for (position p : players) {
 						glm::mat4 model = glm::mat4();
-						model = glm::translate(model, glm::vec3(p.x, p.y - .7, p.z));
+						model = glm::translate(model, glm::vec3(p.x, p.y - 0.7, p.z));
 						model = glm::rotate(model, glm::radians(-p.yaw + 90.f), glm::vec3(0, 1, 0));
 						model = glm::scale(model, glm::vec3(.4));
 						SHADER_SET_MAT4(shader, "model", model);("model", model);
+						glActiveTexture(GL_TEXTURE1);
+						glBindTexture(GL_TEXTURE_2D, knightTexture);
 						knight.Draw(shader);
 						if (p.allied) {
 							printf("Allied \n");
 							model = glm::mat4();
-							model = translate(model, glm::vec3(p.x, p.y + 0.2, p.z));
+							model = glm::translate(model, glm::vec3(p.x, p.y + 0.2, p.z));
 							marker->draw(model, projection, view);
 							USE_SHADER(shader);
+							
 						}
 						model = glm::mat4();
-						model = glm::translate(model, glm::vec3(p.x, p.y - 0.1, p.z));
+						model = glm::translate(model, glm::vec3(p.x, p.y - 0.2, p.z));
 						model = glm::scale(model, glm::vec3(0.005));
 						model = glm::rotate(model, glm::radians(-p.yaw + 278.f), glm::vec3(0.0, 1.0, 0.0));
 						model = glm::rotate(model, glm::radians(-6.3f), glm::vec3(0.0, 0.0, 1.0));
@@ -1101,7 +1413,7 @@ namespace Game {
 			}
 			else if (graphics == 2) {
 				for (auto it = allArrows.begin(); it != allArrows.end(); it++) {
-					(*it).draw(shader, dt, depthPass | graphics);
+					(*it).draw(shader, dt, depthPass | graphics, getTime());
 				}
 				model = glm::mat4();
 				int xfactor = (cam.Front.z > 0) ? -1 : 1;
@@ -1156,14 +1468,14 @@ namespace Game {
 
 		}
 	};
-	Scene * sceneFactory(int scene) {
+	Scene * sceneFactory(int scene, char * username, char * ip) {
 		Scene * map;
 		switch (scene) {
 		case 0:
-			map = new Scene1();
+			map = new Scene1(username, ip);
 			break;
 		default:
-			map = new Scene1();
+			map = new Scene1(username, ip);
 			break;
 		}
 		return map;
