@@ -204,6 +204,7 @@ namespace server {
 				for (ID i = 0; i < users.size(); i++) {
 					if (FD_ISSET(users[i], &readSck)) {
 						int packet = recvInt(i);
+//						printf("Received %d from %d \n", packet, i);
 						if (packet == p_disconnect || packet == SCK_CLOSED) {
 							printf("Disconnect called \n");
 							disconnectClient(i, "disconnect packet recieved");
@@ -276,9 +277,9 @@ namespace server {
 									for (auto it = players.begin(); it != players.end(); it++) {
 										if (i == it->first) continue;
 										position pos = it->second;
-										bool allied = false;;
+										bool allied = false;
 //										if (partners.count(i) != 0 && partners.count(it->first) != 0) {
-											if (partners[i] == it->first && partners[it->first] == i) allied = true;
+										if (partners[i] == it->first && partners[it->first] == i) allied = true;
 //										}
 										if (sendData(reinterpret_cast<char*>(&pos.x), sizeof(float), i) == SCK_CLOSED) { crashed = true; break;}
 										if (sendData(reinterpret_cast<char*>(&pos.y), sizeof(float), i) == SCK_CLOSED) { crashed = true; break; }
@@ -356,11 +357,12 @@ namespace server {
 							}
 						}
 						else if (packet == p_getArrowId) {
-							printf("send arrow called \n");
+							printf("get id called \n");
 							if(sendData((char*)&arrowId, sizeof(arrowId), i) == SCK_CLOSED) continue;
 							arrowId++;
 						}
 						else if (packet == p_sendExistingArrow) {
+//							printf("send arrow called from %d", i);
 							switchMode(i, SCK_BLOCK);
 							arrow_packet nArrow{};
 							memset(&nArrow, 0, sizeof(nArrow));
@@ -374,7 +376,7 @@ namespace server {
 							if (recvData((char*)&nArrow.newShot, sizeof(nArrow.newShot), i) == SCK_CLOSED) continue;
 							if (recvData((char*)&nArrow.isLive, sizeof(nArrow.isLive), i) == SCK_CLOSED) continue;
 							if (recvData((char*)&nArrow.arrowId, sizeof(nArrow.arrowId), i) == SCK_CLOSED) continue;
-
+//							printf(" with arrow id %u \n", nArrow.arrowId);
 							if (int num = recvInt(i) != p_finishSendArrow) {
 								char msg[256];
 								sprintf_s(msg, 256, "Recieved packet %d instead of p_finishSendArrow! \n");
@@ -471,10 +473,11 @@ namespace server {
 								}
 							}
 							for (int j = 0; j < teamIds.size(); j++) {
-								if (kills[teamIds[j].p1] + kills[teamIds[j].p2] > lead.second);
-								team = true;
-								lead.first = (ID)j;
-								lead.second = kills[teamIds[j].p1] + kills[teamIds[j].p2];
+								if (kills[teamIds[j].p1] + kills[teamIds[j].p2] >= lead.second) {
+									team = true;
+									lead.first = (ID)j;
+									lead.second = kills[teamIds[j].p1] + kills[teamIds[j].p2];
+								}
 							}
 							if (team == false) {
 								if (sendInt(i, names[lead.first].size()) == SCK_CLOSED) continue;
@@ -504,8 +507,9 @@ namespace server {
 							switchMode(i, SCK_NO_BLOCK);
 							std::string c(command);
 							delete[] command;
-							printf("Command %s recieved! \n", c.c_str());
+							printf("Command %s recieved! ", c.c_str());
 							std::string opcode = c.substr(0, c.find(' '));
+							printf(" Opcode: %s \n", opcode.c_str());
 							if (opcode == "ally" && teams) {
 								std::string name = c.substr(c.find(' ') + 1);
 								printf("Ally opcode with name %s \n", name.c_str());
@@ -531,7 +535,7 @@ namespace server {
 //								}
 //								else printf("In alliance \n");
 							}
-							else if (opcode == "breakAlliance") {
+							else if (opcode == "breakAlliance" && teams) {
 								partners[i] = MAP_NULL;
 								int t = -1;
 								for (int j = 0; j < teamIds.size(); j++) {
@@ -585,6 +589,9 @@ namespace server {
 								}
 							}
 
+						}
+						else {
+							printf("Unknown packet recieved from %d \n", i);
 						}
 /*						for (auto it = players.begin(); it != players.end(); it++) {
 							printf("Pos: %f %f %f \n", it->second.x, it->second.y, it->second.z);
