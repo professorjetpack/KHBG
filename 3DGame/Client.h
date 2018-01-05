@@ -189,12 +189,20 @@ namespace client {
 			Packet packet = p_position;
 			int size = sizeof(pos);
 			IF(sendInt(sck_connection, packet));
-			IF(sendData((char*)&pos.x, sizeof(pos.x), sck_connection));
+			char buffer[21];
+/*			IF(sendData((char*)&pos.x, sizeof(pos.x), sck_connection));
 			IF(sendData((char*)&pos.y, sizeof(pos.y), sck_connection));
 			IF(sendData((char*)&pos.z, sizeof(pos.z), sck_connection));
 			IF(sendData((char*)&pos.yaw, sizeof(pos.yaw), sck_connection));
 			IF(sendData((char*)&pos.pitch, sizeof(pos.pitch), sck_connection));
-			IF(sendData((char*)&pos.movement, sizeof(pos.movement), sck_connection));
+			IF(sendData((char*)&pos.movement, sizeof(pos.movement), sck_connection));*/
+			memcpy_s(buffer, 21, &pos.x, 4);
+			memcpy_s(buffer + 4, 17, &pos.y, 4);
+			memcpy_s(buffer + 8, 13, &pos.z, 4);
+			memcpy_s(buffer + 12, 9, &pos.yaw, 4);
+			memcpy_s(buffer + 16, 5, &pos.pitch, 4);
+			memcpy_s(buffer + 20, 1, &pos.movement, 1);
+			IF(sendData(buffer, 21, sck_connection));
 //			printf("Sent position \n");
 		}
 		return 0;
@@ -228,7 +236,8 @@ namespace client {
 		if (FD_ISSET(sck_connection, &write)) {
 			Packet p = p_sendExistingArrow;
 			IF(sendInt(sck_connection, p));
-			IF(sendData((char*)&pack.x, sizeof(pack.x), sck_connection));
+			char buffer[42];
+/*			IF(sendData((char*)&pack.x, sizeof(pack.x), sck_connection));
 			IF(sendData((char*)&pack.y, sizeof(pack.y), sck_connection));
 			IF(sendData((char*)&pack.z, sizeof(pack.z), sck_connection));
 			IF(sendData((char*)&pack.velX, sizeof(pack.velX), sck_connection));
@@ -237,9 +246,20 @@ namespace client {
 			IF(sendData((char*)&pack.clock, sizeof(pack.clock), sck_connection));
 			IF(sendData((char*)&pack.newShot, sizeof(pack.newShot), sck_connection));
 			IF(sendData((char*)&pack.isLive, sizeof(pack.isLive), sck_connection));
-			IF(sendData((char*)&pack.arrowId, sizeof(pack.arrowId), sck_connection));			
+			IF(sendData((char*)&pack.arrowId, sizeof(pack.arrowId), sck_connection));	*/
+			memcpy_s(buffer, 42, &pack.x, 4);
+			memcpy_s(buffer + 4, 38, &pack.y, 4);
+			memcpy_s(buffer + 8, 34, &pack.z, 4);
+			memcpy_s(buffer + 12, 30, &pack.velX, 4);
+			memcpy_s(buffer + 16, 26, &pack.velY, 4);
+			memcpy_s(buffer + 20, 22, &pack.velZ, 4);
+			memcpy_s(buffer + 24, 18, &pack.clock, 8);
+			memcpy_s(buffer + 32, 10, &pack.newShot, 1);
+			memcpy_s(buffer + 33, 9, &pack.isLive, 1);
+			memcpy_s(buffer + 34, 8, &pack.arrowId, 8);
+			IF(sendData(buffer, 42, sck_connection));
 			p = p_finishSendArrow;
-			sendInt(sck_connection, p);
+			IF(sendInt(sck_connection, p));
 			return 0;
 		}
 		else {
@@ -283,7 +303,9 @@ namespace client {
 				if (arr.y >= P_END_RECV_ARR - 0.5f && arr.y <= P_END_RECV_ARR + 0.5f) {
 					end = true;  break;
 				}
-				IF(recvData((char*)&arr.x, sizeof(float), sck_connection));
+				char buffer[40];
+				IF(recvData(buffer, 40, sck_connection));
+/*				IF(recvData((char*)&arr.x, sizeof(float), sck_connection));
 				IF(recvData((char*)&arr.z, sizeof(float), sck_connection));
 				IF(recvData((char*)&arr.velX, sizeof(float), sck_connection));
 				IF(recvData((char*)&arr.velY, sizeof(float), sck_connection));
@@ -292,7 +314,18 @@ namespace client {
 				IF(recvData((char*)&arr.shooter, sizeof(unsigned short), sck_connection));
 				IF(recvData((char*)&arr.newShot, sizeof(bool), sck_connection));
 				IF(recvData((char*)&arr.isLive, sizeof(bool), sck_connection));		
-				IF(recvData((char*)&arr.arrowId, sizeof(unsigned long long), sck_connection));
+				IF(recvData((char*)&arr.arrowId, sizeof(unsigned long long), sck_connection));*/
+				memcpy_s(&arr.x, 4, buffer, 4);
+				memcpy_s(&arr.z, 4, buffer + 4, 4);
+				memcpy_s(&arr.velX, 4, buffer + 8, 4);
+				memcpy_s(&arr.velY, 4, buffer + 12, 4);
+				memcpy_s(&arr.velZ, 4, buffer + 16, 4);
+				memcpy_s(&arr.clock, 8, buffer + 20, 8);
+				memcpy_s(&arr.shooter, 2, buffer + 28, 2);
+				memcpy_s(&arr.newShot, 1, buffer + 30, 1);
+				memcpy_s(&arr.isLive, 1, buffer + 31, 1);
+				memcpy_s(&arr.arrowId, 8, buffer + 32, 8);
+
 				arrows.push_back(arr);
 
 			}
@@ -422,13 +455,22 @@ namespace client {
 //			printf("Amount of players: %i \n", n);
 			if(pos.size() < n) pos.resize(n);
 			for (int i = 0; i < n; i++) {
-				IF(recvData(reinterpret_cast<char*>(&(pos[i].x)), sizeof(float), sck_connection));
+				char buffer[22];
+				IF(recvData(buffer, 22, sck_connection));
+/*				IF(recvData(reinterpret_cast<char*>(&(pos[i].x)), sizeof(float), sck_connection));
 				IF(recvData(reinterpret_cast<char*>(&(pos[i].y)), sizeof(float), sck_connection));
 				IF(recvData(reinterpret_cast<char*>(&(pos[i].z)), sizeof(float), sck_connection));
 				IF(recvData(reinterpret_cast<char*>(&(pos[i].yaw)), sizeof(float), sck_connection));
 				IF(recvData(reinterpret_cast<char*>(&(pos[i].pitch)), sizeof(float), sck_connection));
 				IF(recvData(reinterpret_cast<char*>(&(pos[i].movement)), sizeof(byte), sck_connection));
-				IF(recvData(reinterpret_cast<char*>(&(pos[i].allied)), sizeof(bool), sck_connection));
+				IF(recvData(reinterpret_cast<char*>(&(pos[i].allied)), sizeof(bool), sck_connection));*/
+				memcpy_s(&pos[i].x, 4, buffer, 4);
+				memcpy_s(&pos[i].y, 4, buffer + 4, 4);
+				memcpy_s(&pos[i].z, 4, buffer + 8, 4);
+				memcpy_s(&pos[i].yaw, 4, buffer + 12, 4);
+				memcpy_s(&pos[i].pitch, 4, buffer + 16, 4);
+				memcpy_s(&pos[i].movement, 1, buffer + 20, 1);
+				memcpy_s(&pos[i].allied, 1, buffer + 21, 1);
 			}
 			IF(recvInt(sck_connection, packet));
 			if (packet != p_endPlayers) {

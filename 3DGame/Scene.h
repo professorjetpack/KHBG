@@ -468,12 +468,12 @@ namespace Game {
 	class threadUpdate {
 	private:
 		std::mutex mu;
-		int type;
+		bool type;
 		bool notification;
 		int notifications;
 	public:
-		threadUpdate() : notification(0), type(0) {}
-		threadUpdate(int type) : notification(0), notifications(0), type(type) {}
+		threadUpdate() : notification(0), type(false) {}
+		threadUpdate(bool type) : notification(0), notifications(0), type(type) {}
 		void notify() {
 			std::lock_guard<std::mutex> guard(mu);
 			if (type) notifications++;
@@ -487,26 +487,26 @@ namespace Game {
 		int getNotifications() {
 			std::lock_guard<std::mutex> guard(mu);
 			if (type) return notifications;
-			return notification;
+			return notification == true ? 1 : 0;
 		}
 	};
 	class Scene {
 	private:
-		position user;
-		std::vector<position> positions;
 		int kills = 0;
 		int leaderKills = 0;
 		std::string leaderName = "";
 		double serverTime = 0;
 		double pcTime = 0;
-		std::vector<arrow_packet> serverArrows;
 		Arrow deathArrow;
 		std::string username = "";
 		bool isTimed = true;
 		t_clock time;
+		std::vector<arrow_packet> serverArrows;
+		position user;
+		std::vector<position> positions;
 	protected:
 		threadLock playerLock, arrowLock, serverArrowLock, leaderLock, killsLock, backupLock, nameLock, timeLock, commandLock;
-		threadUpdate playerCond, arrowCond, leaderCond, killsCond, deathCond, leaveCond, commandCond;
+		threadUpdate playerCond, arrowCond, leaderCond, killsCond, deathCond, leaveCond, commandCond, backupCond, newArrow;
 		Ringbuffer<Arrow> * arrows;
 		irrklang::ISoundEngine * soundEngine;
 		char * name;
@@ -521,6 +521,8 @@ namespace Game {
 		std::string lastLeaderName, lastName;
 		t_clock lastTime;
 		std::string newCommand = "";
+		bool done = false;
+		bool msgDone = false;
 	public:
 		Player player;
 		bool connected;
@@ -528,6 +530,7 @@ namespace Game {
 		void conversationThread() {
 			client::getPid(player.pid);
 			while (true) {
+				clock_t startTime = clock();
 				client::startLoop();
 				if (UNLOCKED(timeLock) && isTimed) {
 					timeLock = true;
@@ -568,12 +571,15 @@ namespace Game {
 				}
 				arrowLock = false;
 				
-				THREAD_WAIT_UNTIL(backupLock);
-				if (arrowsToBeAdded.size() > 0) {
-					while (!arrowsToBeAdded.empty()) {
-						sendToArrows.push_back(arrowsToBeAdded.front());
-						arrowsToBeAdded.pop();
+				if (backupCond.getNotifications()) {
+					THREAD_WAIT_UNTIL(backupLock);
+					if (arrowsToBeAdded.size() > 0) {
+						while (!arrowsToBeAdded.empty()) {
+							sendToArrows.push_back(arrowsToBeAdded.front());
+							arrowsToBeAdded.pop();
+						}
 					}
+					backupCond.handleNotification();
 				}
 //				printf("Sending %d arrows: ", sendToArrows.size());
 				for (int i = 0; i < sendToArrows.size(); i++) {
@@ -623,7 +629,8 @@ namespace Game {
 					client::shutdown();
 					break;
 				}
-
+				if(!msgDone) printf("Messaging loop took: %f \n", (clock() - startTime) / (double)CLOCKS_PER_SEC);
+				msgDone = true;
 			}
 
 		}
@@ -638,13 +645,25 @@ namespace Game {
 			deathCond.notify();
 		}
 		void loadPlayers() {
-			if (UNLOCKED(playerLock) && playerCond.getNotifications()) {
+			if (UNLOCKED(playerLock)) {
 				playerLock = true;
 				players = positions;
-				playerCond.handleNotification();
 				playerLock = false;
 			}
 		}
+/*		void timing() {
+			client::startLoop();
+			if (/*UNLOCKED(timeLock) && isTimed) {
+//				timeLock = true;
+				client::getTime(time);
+				if (time.minutes == -2 && time.seconds == 0) isTimed = false;
+//				timeLock = false;
+			}
+//			std::unique_lock<std::mutex> timeLock(timeMutex);
+			client::getServerTime(serverTime);
+			pcTime = glfwGetTime(); //glfwGetTime() is thread safe
+//			timeLock.unlock();
+		}*/
 	public:
 		Scene() {
 			soundEngine = irrklang::createIrrKlangDevice();
@@ -788,6 +807,65 @@ namespace Game {
 		bool canPlay = true;
 		double lastInjury = 0;
 		unsigned int knightTexture;
+		Camera cam;
+	protected:
+/*		void doArrows() {
+			clock_t time = clock();
+			if (newArrow.getNotifications()) {
+				Arrow arr = Arrow(cam, arrow, player.pid, getTime());
+				client::getNewArrowId(arr.getId());
+				arrows->addElement(arr);
+				newArrow.handleNotification();
+			}
+			for (auto it = arrows->begin(); it != arrows->end(); it++) {
+				client::sendExistingArrow((*it).toPacket());
+			}
+			serverArrows.erase(serverArrows.begin(), serverArrows.end());
+			client::getArrows(serverArrows);
+			if (!done) printf("Arrow thread takes: %f, \n", (((double)clock() - (double)time) / CLOCKS_PER_SEC));
+
+		}
+		void doPlayers() {
+			clock_t time = clock();
+			client::sendPos(user);
+			players.erase(players.begin(), players.end());
+			client::getPos(players);
+			if (!done) printf("Player thread takes %f \n", (clock() - time) / (double)CLOCKS_PER_SEC);
+		}
+		void doInfo() {
+			if (deathCond.getNotifications()) {
+				client::notifyDeath(deathArrow.toPacket());
+				deathCond.handleNotification();
+			}
+			if (UNLOCKED(killsLock)) {
+				killsLock = true;
+				client::getKills(kills);
+				killsCond.notify();
+				killsLock = false;
+			}
+			if (UNLOCKED(leaderLock)) {
+				leaderLock = true;
+				client::getLeader(leaderKills, leaderName);
+				leaderCond.notify();
+				leaderLock = false;
+			}
+			if (UNLOCKED(nameLock)) {
+				nameLock = true;
+				char * _name;
+				client::getName(&_name);
+				username = _name;
+				delete[] _name;
+				nameLock = false;
+
+			}
+			if (commandCond.getNotifications() && commandLock == false) {
+				commandLock = true;
+				client::sendCommand(newCommand);
+				commandCond.handleNotification();
+				commandLock = false;
+			}
+		}*/
+
 	public:
 		~Scene1() {
 			delete marker;
@@ -818,6 +896,7 @@ namespace Game {
 			client::startup(ip);
 			if (client::sendName(username) == 0) {
 				connected = true;
+//				client::getPid(player.pid);
 				std::thread t(&Scene::conversationThread, this);
 				t.detach();
 			}
@@ -916,8 +995,10 @@ namespace Game {
 		}
 		void addArrow(Camera & cam) {
 			soundEngine->play2D("Assets/sounds/arrowShoot.wav");
+//			newArrow.notify();
 			Arrow arr = Arrow(cam, arrow, player.pid, getTime());
-//			if(client::getNewArrowId(arr.getId()) != 0) arr.getId() = 0;
+/*			if(client::getNewArrowId(arr.getId()) != 0) arr.getId() = 0;
+			arrows->addElement(arr);*/
 			arr.newShot = true;
 			if (connected) {
 				std::lock_guard<std::mutex> guard(arrowMutex);
@@ -937,11 +1018,20 @@ namespace Game {
 				printf("Pushed onto arr to be added \n");
 				arrowsToBeAdded.push(arr.toPacket());
 				allArrows.push_back(arr);
+				backupCond.notify();
 				backupLock = false;
 			}			
 		}
-		void renderScene(Shader shader, bool depthPass, Camera & cam, float dt, int graphics, glm::mat4 view = glm::mat4(), glm::mat4 projection = glm::mat4()) {
+		void renderScene(Shader shader, bool depthPass, Camera & cam, float dt, int graphics, glm::mat4 view = glm::mat4(), glm::mat4 projection = glm::mat4()) {			
 			if (!canPlay) return;
+			clock_t startTime = clock();
+/*			if (!depthPass) { timing(); }
+			std::thread * t = NULL;
+			if (!depthPass) {
+				this->cam = cam;
+				t = new std::thread(&Scene1::doArrows, this);
+			}
+			clock_t time = clock();*/
 			glm::mat4 model;
 			model = glm::translate(model, glm::vec3(0.0));
 			SHADER_SET_MAT4(shader, "model", model);("model", model);
@@ -1234,6 +1324,13 @@ namespace Game {
 			sunModel = glm::scale(sunModel, glm::vec3(2));
 			SHADER_SET_MAT4(shader, "model", model);("model", sunModel);
 			sun.draw();*/
+/*			if (!depthPass) {
+				if (!done) printf("First section takes %f \n", (clock() - time) / (double)CLOCKS_PER_SEC);
+				t->join();
+				delete t;
+				t = new std::thread(&Scene1::doPlayers, this);
+				time = clock();
+			}*/
 #pragma endregion
 #pragma region DrawBow/Arrows/Players
 			if (!depthPass) {
@@ -1262,7 +1359,7 @@ namespace Game {
 //					printf("Handling arrows size: %d \n", arrows->getSize());
 					for (auto it = arrows->begin(); it != arrows->end(); it++) {
 						if ((*it).newShot) (*it).newShot = false;
-						//					client::sendExistingArrow((*it).toPacket());
+//						client::sendExistingArrow((*it).toPacket());
 						(*it).draw(shader, dt, depthPass, getTime());
 						glm::vec3 point = (*it).getPoint();
 						if ((*it).isAlive()) {
@@ -1336,11 +1433,16 @@ namespace Game {
 					posNow.yaw = cam.b4LookYaw;
 				}
 				setPos(posNow);
+/*				if (!done) printf("Second section takes %f \n", (clock() - time) / (double)CLOCKS_PER_SEC);
+				t->join();
+				delete t;
+				t = new std::thread(&Scene1::doInfo, this);
+				time = clock();*/
 //				int send = client::sendPos(posNow);
-/*				if (send != 0 && send != SCK_CLOSED) printf("Error code %i while sending player positions! \n", send);
+//				if (send != 0 && send != SCK_CLOSED) printf("Error code %i while sending player positions! \n", send);
 
 //				err = client::getPos(players);
-				if (err != 0 && err != SCK_CLOSED) printf("Error code %i while getting player positions! \n", err);*/
+//				if (err != 0 && err != SCK_CLOSED) printf("Error code %i while getting player positions! \n", err);
 				loadPlayers();
 				if (players.size() > 0) {
 					int i = 0;
@@ -1410,6 +1512,12 @@ namespace Game {
 						soundEngine->play2D("Assets/sounds/grass-step.wav");
 					}
 				}
+/*				if (!done) printf("Last section takes %f \n", (clock() - time) / (double)CLOCKS_PER_SEC);
+				done = true;
+				t->join();
+				delete t;*/
+				if (!depthPass && !done) printf("Scene took: %f \n", (clock() - startTime) / (double)CLOCKS_PER_SEC);
+				done = true;
 			}
 			else if (graphics == 2) {
 				for (auto it = allArrows.begin(); it != allArrows.end(); it++) {
@@ -1457,7 +1565,7 @@ namespace Game {
 				model = glm::rotate(model, glm::radians(-theta + 90.f), glm::vec3(0, 1, 0));
 				model = glm::scale(model, glm::vec3(.4));
 				SHADER_SET_MAT4(shader, "model", model);
-				knight.Draw(shader);
+				knight.Draw(shader); 
 
 			}
 //			printf("Pos: %f, %f, %f \n", cam.Position.x, cam.Position.y, cam.Position.z);
