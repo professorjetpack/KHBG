@@ -249,7 +249,9 @@ namespace server {
 //							printf("Incoming position \n");
 							switchMode(i, SCK_BLOCK);
 							position pos;
-							if(recvData((char*)&pos.x, sizeof(pos.x), i) == SCK_CLOSED) continue;
+							char buffer[21];
+							if (recvData(buffer, 21, i) == SCK_CLOSED) continue;
+/*							if(recvData((char*)&pos.x, sizeof(pos.x), i) == SCK_CLOSED) continue;
 //							printf("Recieved x; ");
 							if(recvData((char*)&pos.y, sizeof(pos.y), i) == SCK_CLOSED) continue;
 	//						printf("Recieved y; ");
@@ -258,7 +260,13 @@ namespace server {
 							if(recvData((char*)&pos.yaw, sizeof(pos.yaw), i) == SCK_CLOSED) continue;
 //							printf("Recieved yaw;\n");
 							if(recvData((char*)&pos.pitch, sizeof(pos.pitch), i) == SCK_CLOSED) continue;
-							if (recvData((char*)&pos.movement, sizeof(pos.movement), i) == SCK_CLOSED) continue;
+							if (recvData((char*)&pos.movement, sizeof(pos.movement), i) == SCK_CLOSED) continue;*/
+							memcpy_s(&pos.x, 4, buffer, 4);
+							memcpy_s(&pos.y, 4, buffer + 4, 4);
+							memcpy_s(&pos.z, 4, buffer + 8, 4);
+							memcpy_s(&pos.yaw, 4, buffer + 12, 4);
+							memcpy_s(&pos.pitch, 4, buffer + 16, 4);
+							memcpy_s(&pos.movement, 1, buffer + 20, 1);
 							players[i] = pos;
 //							printf("Pos: %f, %f, %f \n", pos.x, pos.y, pos.z);
 							switchMode(i, SCK_NO_BLOCK);
@@ -266,6 +274,7 @@ namespace server {
 						else if (packet == p_getPos) {
 //							printf("get pos called! \n");
 							if (FD_ISSET(users[i], &writeSck)) {
+								switchMode(i, SCK_BLOCK);
 								int packet = p_players;
 								if(sendInt(i, packet) == SCK_CLOSED) continue;
 //								printf("Sent data start packet \n");
@@ -280,20 +289,30 @@ namespace server {
 										bool allied = false;
 //										if (partners.count(i) != 0 && partners.count(it->first) != 0) {
 										if (partners[i] == it->first && partners[it->first] == i) allied = true;
+										char buffer[22];
+										memcpy_s(buffer, 22, &pos.x, 4);
+										memcpy_s(buffer + 4, 22 - 4, &pos.y, 4);
+										memcpy_s(buffer + 8, 22 - 8, &pos.z, 4);
+										memcpy_s(buffer + 12, 22 - 12, &pos.yaw, 4);
+										memcpy_s(buffer + 16, 22 - 16, &pos.pitch, 4);
+										memcpy_s(buffer + 20, 22 - 20, &pos.movement, 1);
+										memcpy_s(buffer + 21, 22 - 21, &allied, 1);
 //										}
-										if (sendData(reinterpret_cast<char*>(&pos.x), sizeof(float), i) == SCK_CLOSED) { crashed = true; break;}
+/*										if (sendData(reinterpret_cast<char*>(&pos.x), sizeof(float), i) == SCK_CLOSED) { crashed = true; break;}
 										if (sendData(reinterpret_cast<char*>(&pos.y), sizeof(float), i) == SCK_CLOSED) { crashed = true; break; }
 										if (sendData(reinterpret_cast<char*>(&pos.z), sizeof(float), i) == SCK_CLOSED) { crashed = true; break; }
 										if (sendData(reinterpret_cast<char*>(&pos.yaw), sizeof(float), i) == SCK_CLOSED) { crashed = true; break; }
 										if (sendData(reinterpret_cast<char*>(&pos.pitch), sizeof(float), i) == SCK_CLOSED) { crashed = true; break; }
 										if (sendData(reinterpret_cast<char*>(&pos.movement), sizeof(byte), i) == SCK_CLOSED) { crashed = true; break; }
 										if (sendData(reinterpret_cast<char*>(&allied), sizeof(bool), i) == SCK_CLOSED) { crashed = true; break; }
-										//									printf("Sent data of: %i to %i \n", it->first, i);
+										//									printf("Sent data of: %i to %i \n", it->first, i);*/
+										if (sendData(buffer, 22, i) == SCK_CLOSED) { crashed = true; break; }
 									}
 									if (crashed) continue;
 								}
 								packet = p_endPlayers;
 								if(sendInt(i, packet) == SCK_CLOSED) continue;
+								switchMode(i, SCK_NO_BLOCK);
 							}
 							else {
 								printf("Write fdset not set \n");
@@ -366,7 +385,8 @@ namespace server {
 							switchMode(i, SCK_BLOCK);
 							arrow_packet nArrow{};
 							memset(&nArrow, 0, sizeof(nArrow));
-							if (recvData((char*)&nArrow.x, sizeof(nArrow.x), i) == SCK_CLOSED) continue;
+							char buffer[42];
+/*							if (recvData((char*)&nArrow.x, sizeof(nArrow.x), i) == SCK_CLOSED) continue;
 							if (recvData((char*)&nArrow.y, sizeof(nArrow.y), i) == SCK_CLOSED) continue;
 							if (recvData((char*)&nArrow.z, sizeof(nArrow.z), i) == SCK_CLOSED) continue;
 							if (recvData((char*)&nArrow.velX, sizeof(nArrow.velX), i) == SCK_CLOSED) continue;
@@ -375,7 +395,18 @@ namespace server {
 							if (recvData((char*)&nArrow.clock, sizeof(nArrow.clock), i) == SCK_CLOSED) continue;
 							if (recvData((char*)&nArrow.newShot, sizeof(nArrow.newShot), i) == SCK_CLOSED) continue;
 							if (recvData((char*)&nArrow.isLive, sizeof(nArrow.isLive), i) == SCK_CLOSED) continue;
-							if (recvData((char*)&nArrow.arrowId, sizeof(nArrow.arrowId), i) == SCK_CLOSED) continue;
+							if (recvData((char*)&nArrow.arrowId, sizeof(nArrow.arrowId), i) == SCK_CLOSED) continue;*/
+							if (recvData(buffer, 42, i) == SCK_CLOSED) continue;
+							memcpy_s(&nArrow.x, 4, buffer, 4);
+							memcpy_s(&nArrow.y, 4, buffer + 4, 4);
+							memcpy_s(&nArrow.z, 4, buffer + 8, 4);
+							memcpy_s(&nArrow.velX, 4, buffer + 12, 4);
+							memcpy_s(&nArrow.velY, 4, buffer + 16, 4);
+							memcpy_s(&nArrow.velZ, 4, buffer + 20, 4);
+							memcpy_s(&nArrow.clock, 8, buffer + 24, 8);
+							memcpy_s(&nArrow.newShot, 1, buffer + 32, 1);
+							memcpy_s(&nArrow.isLive, 1, buffer + 33, 1);
+							memcpy_s(&nArrow.arrowId, 8, buffer + 34, 8);
 //							printf(" with arrow id %u \n", nArrow.arrowId);
 							if (int num = recvInt(i) != p_finishSendArrow) {
 								char msg[256];
@@ -405,6 +436,7 @@ namespace server {
 								arrowClock = 0;
 							}*/
 							if (FD_ISSET(users[i], &writeSck)) {
+								switchMode(i, SCK_BLOCK);
 								int packet = p_arrows;
 								if (sendInt(i, packet) == SCK_CLOSED) continue;
 								int amount = newArrows.getSize();
@@ -413,34 +445,50 @@ namespace server {
 								bool crashed = false;
 //								printf("Size of server arrows: %d \n", amount);
 								for (auto it = newArrows.begin(); it != newArrows.end(); it++) {
-//									if ((*it).arrowId <= lastArrow || (*it).shooter == i) continue;									
-									if (sendData((char*)&((*it).y), sizeof((*it).y), i) == SCK_CLOSED) { crashed = true; break;  }
+//									if ((*it).arrowId <= lastArrow || (*it).shooter == i) continue;
+									if (sendData((char*)&((*it).y), sizeof((*it).y), i) == SCK_CLOSED) { crashed = true; break; }
+									char buffer[40];
+/*									if (sendData((char*)&((*it).y), sizeof((*it).y), i) == SCK_CLOSED) { crashed = true; break;  }
 									if (sendData((char*)&((*it).x), sizeof((*it).x), i) == SCK_CLOSED) { crashed = true; break;  }
 									if (sendData((char*)&((*it).z), sizeof((*it).z), i) == SCK_CLOSED) { crashed = true; break;  }
 									if (sendData((char*)&((*it).velX), sizeof((*it).velX), i) == SCK_CLOSED) { crashed = true; break;  }
 									if (sendData((char*)&((*it).velY), sizeof((*it).velY), i) == SCK_CLOSED) { crashed = true; break;  }
 									if (sendData((char*)&((*it).velZ), sizeof((*it).velZ), i) == SCK_CLOSED) { crashed = true; break;  }
-									if (sendData((char*)&((*it).clock), sizeof((*it).clock), i) == SCK_CLOSED) { crashed = true; break;  }									
+									if (sendData((char*)&((*it).clock), sizeof((*it).clock), i) == SCK_CLOSED) { crashed = true; break;  }*/
+									ID shooter = (*it).shooter;
 									if (teamIds.size() > 0) {
 										bool sendTeam = false;
 										for (auto t = teamIds.begin(); t != teamIds.end(); t++) {
-											if (((*t).p1 == i && (*t).p2 == (*it).shooter) || ((*t).p2 == i && (*t).p1 == (*it).shooter)) { sendTeam = true; break; }
+											if (((*t).p1 == i && (*t).p2 == (*it).shooter) || ((*t).p2 == i && (*t).p1 == (*it).shooter)) { shooter = MAP_NULL; break; }
 										}
-										if (sendTeam) {
-											ID team = MAP_NULL;
-											if (sendData((char*)&team, sizeof(team), i) == SCK_CLOSED) { crashed = true; break; }
+									}
+/*										if (sendTeam) {
+											shooter = MAP_NULL;
+//											if (sendData((char*)&team, sizeof(team), i) == SCK_CLOSED) { crashed = true; break; }
 										}
 									}
 									else {
 										if (sendData((char*)&((*it).shooter), sizeof((*it).shooter), i) == SCK_CLOSED) { crashed = true; break; }
-									}
-									if (sendData((char*)&((*it).newShot), sizeof((*it).newShot), i) == SCK_CLOSED) { crashed = true; break; }
+									}*/
+/*									if (sendData((char*)&((*it).newShot), sizeof((*it).newShot), i) == SCK_CLOSED) { crashed = true; break; }
 									if (sendData((char*)&((*it).isLive), sizeof((*it).isLive), i) == SCK_CLOSED) {crashed = true; break; }
-									if (sendData((char*)&((*it).arrowId), sizeof((*it).arrowId), i) == SCK_CLOSED) { crashed = true; break; }
+									if (sendData((char*)&((*it).arrowId), sizeof((*it).arrowId), i) == SCK_CLOSED) { crashed = true; break; }*/
+									memcpy_s(buffer, 40, &(*it).x, 4);
+									memcpy_s(buffer + 4, 36, &(*it).z, 4);
+									memcpy_s(buffer + 8, 32, &(*it).velX, 4);
+									memcpy_s(buffer + 12, 28, &(*it).velY, 4);
+									memcpy_s(buffer + 16, 24, &(*it).velZ, 4);
+									memcpy_s(buffer + 20, 20, &(*it).clock, 8);
+									memcpy_s(buffer + 28, 12, &(*it).shooter, 2);
+									memcpy_s(buffer + 30, 10, &(*it).newShot, 1);
+									memcpy_s(buffer + 31, 9, &(*it).isLive, 1);
+									memcpy_s(buffer + 32, 8, &(*it).arrowId, 8);
+									if (sendData(buffer, 40, i) == SCK_CLOSED) { crashed = true; break; }
 								}
 								if (crashed) continue;
 								float end_packet = P_END_SEND_ARR;
 								if(sendData((char*)&end_packet, sizeof(end_packet), i) == SCK_CLOSED) continue;
+								switchMode(i, SCK_NO_BLOCK);
 							}
 						}
 						else if (packet == p_died) {						
