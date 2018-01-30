@@ -117,6 +117,7 @@
     <ClInclude Include="Packetsh.h" />
     <ClInclude Include="Ringbuffer.h" />
     <ClInclude Include="Time.h" />
+    <ClInclude Include="UdpPackets.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp" />

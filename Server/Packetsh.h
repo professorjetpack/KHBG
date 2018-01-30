@@ -44,7 +44,9 @@ namespace server {
 		p_getTimeNow,
 		p_sendExistingArrow,
 		p_getPid,
-		p_disableArrow
+		p_disableArrow,
+		p_data,
+		p_sendData
 	};
 #pragma pack(push, 1)
 	struct position {
@@ -87,7 +89,7 @@ namespace server {
 	ServerTime time;
 	unsigned long long arrowId;
 	uint16_t arrowClock = 0;
-	Ringbuffer<arrow_packet> newArrows(75);
+	Ringbuffer<arrow_packet> * newArrows;
 	int userNum = 0;
 	u_long mode;
 	FD_SET /*readFds, writeFds,*/ exceptFds;
@@ -123,10 +125,13 @@ namespace server {
 //		if (IS_DISCONNECT(id)) return id;
 		printf("Disconnecting client %i; Reason: %s \n", id, reason);
 		printf("Disconnect error code: %d \n", WSAGetLastError());
-		closesocket(users[id]);
 		auto it = std::find(users.begin(), users.end(), users[id]);
 		if (it != users.end()) users.erase(it);
-		else printf("Could not delete user from list \n");
+		else {
+			printf("Could not delete user from list \n");
+			return 0;
+		}
+		closesocket(users[id]);
 		userNum--;
 		kills.erase(id);
 		players.erase(id);
@@ -151,22 +156,22 @@ namespace server {
 	int recvInt(ID id) {
 		char recvData = 0;
 		int data;
-		while (recvData < 4) {
+//		while (recvData < 4) {
 			char rec = recv(users[id], ((char*)&data) + recvData, 4 - recvData, NULL);
 			if (rec == SOCKET_ERROR && rec != WSAEWOULDBLOCK) return disconnectClient(id);
-			recvData += rec;
-		}
+//			recvData += rec;
+//		}
 		return ntohl(data);
 
 	}
 	int sendInt(ID id, int data) {
 		char sentData = 0;
 		data = htonl(data);
-		while (sentData < 4) {
+//		while (sentData < 4) {
 			char sent = send(users[id], ((char*)&data) + sentData, 4 - sentData, NULL);
 			if (sent == SOCKET_ERROR && sent != WSAEWOULDBLOCK) return disconnectClient(id);
-			sentData += sent;
-		}
+//			sentData += sent;
+//		}
 		return 0;
 	}
 	int recvData(char * storage, int len, ID id) {
@@ -210,11 +215,213 @@ namespace server {
 							disconnectClient(i, "disconnect packet recieved");
 							continue;
 						}
-						else if (packet == p_getTimeNow) {
+						else if (packet == p_data) {
+							printf("p_data called \n");
+							if (FD_ISSET(users[i], &readSck)) {
+								/*
+								kills			4
+								leaderKills		4
+								lnameSize		4
+								leaderName		lnameSize
+								minutes			4
+								seconds			4
+								elapsed			8
+								nameSize		4
+								name			nameSize
+								playersSize		4
+								[players]		playerSize * 22
+								arrowsSize		4
+								[arrows]		arrowsSize * 44
+								*/
+								std::pair<ID, int> lead = std::make_pair(0, 0);
+								bool team = false;
+								char lname[256];
+								for (auto it = kills.begin(); it != kills.end(); it++) {
+									if ((*it).second > lead.second) {
+										lead = *it;
+									}
+								}
+								for (int j = 0; j < teamIds.size(); j++) {
+									if (kills[teamIds[j].p1] + kills[teamIds[j].p2] >= lead.second) {
+										team = true;
+										lead.first = (ID)j;
+										lead.second = kills[teamIds[j].p1] + kills[teamIds[j].p2];
+									}
+								}
+								if (team == false) {
+									strcpy_s(lname, 256, names[lead.first].c_str());
+									printf("Leader name: %s with kills: %d \n", names[lead.first].c_str(), lead.second);
+								}
+								else {
+									sprintf_s(lname, 256, "%s and %s", names[teamIds[lead.first].p1].c_str(), names[teamIds[lead.first].p2].c_str());
+									printf("Leader names: %s with kills %d \n", lname, lead.second);
+								}
+								char name[500];
+								sprintf_s(name, 500, "Solo | %s", names[i].c_str());
+								for (int j = 0; j < teamIds.size(); j++) {
+									if (teamIds[j].p1 == i || teamIds[j].p2 == i) {
+										sprintf_s(name, 500, "Team | %s and %s", names[teamIds[j].p1].c_str(), names[teamIds[j].p2].c_str());
+										break;
+									}
+								}
+								int buffSize = 40 + (players.size() * 22) + (newArrows->getSize() * 44) + strlen(lname) + strlen(name);
+								printf("sending data of size %d \n", buffSize);
+								char * buffer = new char[buffSize];
+								memset(buffer, 0, buffSize);
+								memcpy_s(buffer, sizeof(int), &kills[i], sizeof(int));
+								memcpy_s(buffer + 4, sizeof(int), &lead.second, sizeof(int));
+								int leaderNameSize = strlen(lname);
+								memcpy_s(buffer + 8, sizeof(int), &leaderNameSize, sizeof(int));
+								memcpy_s(buffer + 12, leaderNameSize, lname, leaderNameSize);
+								printf("Leader: %s with %d kills \n", lname, lead.second);
+								int minutes = -2, seconds = 0;
+								if (timer != NULL) {
+									int cl = timer->getElapsed();
+									minutes = timer->mins() - (cl / 60);
+									seconds = 60 - (cl % 60);
+									if (minutes < 0) {
+										if (minutes <= -1 && seconds <= 40) {
+											timer->reset(timer->mins());
+											kills.clear();
+										}
+										minutes = 0;
+										seconds = 0;
+									}
+								}
+								memcpy_s(buffer + 12 + leaderNameSize, sizeof(int), &minutes, sizeof(int));
+								memcpy_s(buffer + 16 + leaderNameSize, sizeof(int), &seconds, sizeof(int));
+								double elapsed = time.getSecondsNow();
+								memcpy_s(buffer + 20 + leaderNameSize, sizeof(double), &elapsed, sizeof(double));
+								int nameSize = strlen(name);
+								memcpy_s(buffer + 28 + leaderNameSize, sizeof(int), &nameSize, sizeof(int));
+								memcpy_s(buffer + 32 + leaderNameSize, nameSize, name, nameSize);
+//								printf("Put %s into buffer \n", name);
+								int playersSize = players.size() - 1;
+								memcpy_s(buffer + 32 + leaderNameSize + nameSize, sizeof(int), &playersSize, sizeof(int));
+								char * buff = buffer + 36 + leaderNameSize + nameSize;
+								for (auto it = players.begin(); it != players.end(); it++) {
+									if (it->first == i) continue;
+									position pos = it->second;
+									bool allied = false;
+									if (partners[i] == it->first && partners[it->first] == i) allied = true;
+									memcpy_s(buff, 22, &pos.x, 4);
+									memcpy_s(buff + 4, 22 - 4, &pos.y, 4);
+									memcpy_s(buff + 8, 22 - 8, &pos.z, 4);
+									memcpy_s(buff + 12, 22 - 12, &pos.yaw, 4);
+									memcpy_s(buff + 16, 22 - 16, &pos.pitch, 4);
+									memcpy_s(buff + 20, 22 - 20, &pos.movement, 1);
+									memcpy_s(buff + 21, 22 - 21, &allied, 1);
+									buff += 22;
+								}
+								int arrowsSize = newArrows->getSize();
+								printf("Sending arrow size of %d \n", arrowsSize);
+								memcpy_s(buff, sizeof(int), &arrowsSize, sizeof(int));
+								buff += 4;
+								for (auto it = newArrows->begin(); it != newArrows->end(); it++) {
+									ID shooter = (*it).shooter;
+									if (teamIds.size() > 0) {
+										bool sendTeam = false;
+										for (auto t = teamIds.begin(); t != teamIds.end(); t++) {
+											if (((*t).p1 == i && (*t).p2 == (*it).shooter) || ((*t).p2 == i && (*t).p1 == (*it).shooter)) { shooter = MAP_NULL; break; }
+										}
+									}
+									memcpy_s(buff, 44, &(*it).x, 4);
+									memcpy_s(buff + 4, 40, &(*it).y, 4);
+									memcpy_s(buff + 8, 36, &(*it).z, 4);
+									memcpy_s(buff + 12, 32, &(*it).velX, 4);
+									memcpy_s(buff + 16, 28, &(*it).velY, 4);
+									memcpy_s(buff + 20, 24, &(*it).velZ, 4);
+									memcpy_s(buff + 24, 20, &(*it).clock, 8);
+									memcpy_s(buff + 32, 12, &(*it).shooter, 2);
+									memcpy_s(buff + 34, 10, &(*it).newShot, 1);
+									memcpy_s(buff + 35, 9, &(*it).isLive, 1);
+									memcpy_s(buff + 36, 8, &(*it).arrowId, 8);
+									buff += 44;
+								}
+
+//								printf("Sending Size \n");
+								switchMode(i, SCK_BLOCK);
+								if (sendInt(i, buffSize) == SCK_CLOSED) continue;
+								if (sendData(buffer, buffSize, i) == SCK_CLOSED) continue;
+								switchMode(i, SCK_NO_BLOCK);
+								printf("Sent data \n");
+								delete[] buffer;
+
+								
+
+							}
+						}
+						else if (packet == p_sendData) {
+							printf("Send data called! \n");
+							switchMode(i, SCK_BLOCK);
+							int size = recvInt(i);
+							if (size == SCK_CLOSED) continue;
+							char * buffer = new char[size];
+							printf("Recieving data of size: %d \n", size);
+							if (recvData(buffer, size, i) == SCK_CLOSED) continue;
+							switchMode(i, SCK_NO_BLOCK);
+							position pos;
+							memcpy_s(&pos.x, 4, buffer, 4);
+							memcpy_s(&pos.y, 4, buffer + 4, 4);
+							memcpy_s(&pos.z, 4, buffer + 8, 4);
+							memcpy_s(&pos.yaw, 4, buffer + 12, 4);
+							memcpy_s(&pos.pitch, 4, buffer + 16, 4);
+							memcpy_s(&pos.movement, 1, buffer + 20, 1);
+							players[i] = pos;
+							printf("Pos: %f:%f:%f \n", pos.x, pos.y, pos.z);
+							printf("Player updated \n");
+							int arrowsSize;
+							memcpy_s(&arrowsSize, sizeof(int), buffer + 21, sizeof(int)); //issue here
+							printf("Arrows Size: %d \n", arrowsSize);
+							char * buff = buffer + 25;
+							if (arrowsSize > 0) {
+								for (int j = 0; j < arrowsSize; j++) {
+									arrow_packet nArrow;
+									memcpy_s(&nArrow.x, 4, buff, 4);
+									memcpy_s(&nArrow.y, 4, buff + 4, 4);
+									memcpy_s(&nArrow.z, 4, buff + 8, 4);
+									memcpy_s(&nArrow.velX, 4, buff + 12, 4);
+									memcpy_s(&nArrow.velY, 4, buff + 16, 4);
+									memcpy_s(&nArrow.velZ, 4, buff + 20, 4);
+									memcpy_s(&nArrow.clock, 8, buff + 24, 8);
+									memcpy_s(&nArrow.newShot, 1, buff + 32, 1);
+									memcpy_s(&nArrow.isLive, 1, buff + 33, 1);
+									memcpy_s(&nArrow.arrowId, 8, buff + 34, 8);
+									buff += 42;
+									nArrow.shooter = i;
+									for (auto it = newArrows->begin(); it != newArrows->end(); it++) {
+										if ((*it).arrowId == nArrow.arrowId) {
+											(*it) = nArrow;
+											break;
+										}
+									}
+									newArrows->addElement(nArrow);
+								}
+							}
+							bool died;
+							memcpy_s(&died, sizeof(bool), buff, sizeof(bool));
+							printf("Is dead: %d \n", died);
+							if (died) {
+								int killer;
+								memcpy_s(&killer, sizeof(int), buff + 1, sizeof(int));
+								if (killer != i) {
+									if (kills[killer] == 0) {
+										kills[killer] = 1;
+									}
+									else {
+										kills[killer] += 1;
+									}
+								}
+
+							}
+							printf("Got data \n");
+							delete[] buffer;
+						}
+/*						else if (packet == p_getTimeNow) {
 							if (!FD_ISSET(users[i], &writeSck)) continue;
 							double tNow = time.getSecondsNow();
 							if(sendData((char*)&tNow, sizeof(double), i) == SCK_CLOSED) continue;
-						}
+						}*/
 						else if (packet == p_getPid) {
 							if (!FD_ISSET(users[i], &writeSck)) continue;
 							printf("Getting pid of %d \n", i);
@@ -348,7 +555,7 @@ namespace server {
 							unsigned long long id;
 							recvData((char*)&id, sizeof(long long), i);
 							switchMode(i, SCK_NO_BLOCK);
-							for (auto it = newArrows.begin(); it != newArrows.end(); it++) {
+							for (auto it = newArrows->begin(); it != newArrows->end(); it++) {
 								if ((*it).arrowId == id) {
 									(*it).isLive = false;
 									break;
@@ -377,8 +584,13 @@ namespace server {
 						}
 						else if (packet == p_getArrowId) {
 							printf("get id called \n");
-							if(sendData((char*)&arrowId, sizeof(arrowId), i) == SCK_CLOSED) continue;
-							arrowId++;
+							char * buffer = new char[10 * sizeof(unsigned long long)];
+							for (int j = 0; j < 10; j++) {
+								memcpy_s(buffer + (j * 8), 8, (char*)&arrowId, 8);
+								arrowId++;
+							}
+							if (sendData(buffer, 80, i) == SCK_CLOSED) continue;
+							delete[] buffer;
 						}
 						else if (packet == p_sendExistingArrow) {
 //							printf("send arrow called from %d", i);
@@ -417,7 +629,7 @@ namespace server {
 							switchMode(i, SCK_NO_BLOCK);
 							nArrow.shooter = i;
 							bool exist = false;
-							for (auto it = newArrows.begin(); it != newArrows.end(); it++) {
+							for (auto it = newArrows->begin(); it != newArrows->end(); it++) {
 								if ((*it).arrowId == nArrow.arrowId) {
 									(*it) = nArrow;
 									exist = true;
@@ -426,7 +638,7 @@ namespace server {
 							}
 							if (!exist) {
 								printf("Arrow does not exist \n");
-								newArrows.addElement(nArrow);
+								newArrows->addElement(nArrow);
 							}
 						}
 						else if (packet == p_getNewArrows) {
@@ -439,12 +651,12 @@ namespace server {
 								switchMode(i, SCK_BLOCK);
 								int packet = p_arrows;
 								if (sendInt(i, packet) == SCK_CLOSED) continue;
-								int amount = newArrows.getSize();
+								int amount = newArrows->getSize();
 								if (sendInt(i, amount) == SCK_CLOSED) continue;
 //								printf("Amount of arrows %d \n", amount);
 								bool crashed = false;
 //								printf("Size of server arrows: %d \n", amount);
-								for (auto it = newArrows.begin(); it != newArrows.end(); it++) {
+								for (auto it = newArrows->begin(); it != newArrows->end(); it++) {
 //									if ((*it).arrowId <= lastArrow || (*it).shooter == i) continue;
 									if (sendData((char*)&((*it).y), sizeof((*it).y), i) == SCK_CLOSED) { crashed = true; break; }
 									char buffer[40];
@@ -695,6 +907,9 @@ namespace server {
 		u_long mode = 1;
 		ioctlsocket(sck_server, FIONBIO, &mode);
 		printf("Server started!! \n");
+		int flag = 1;
+		setsockopt(sck_server, IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(int));
+		newArrows = new Ringbuffer<arrow_packet>(25);
 		while (true) {
 			FD_ZERO(&readSck);
 			FD_ZERO(&exceptFds);
@@ -704,6 +919,7 @@ namespace server {
 			for (ID i = 0; i < users.size(); i++) {
 				FD_SET(users[i], &readSck);
 				FD_SET(users[i], &writeSck);
+//				setsockopt(users[i], IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(int));
 			}
 			select(0, &readSck, NULL, &exceptFds, NULL);
 			if (FD_ISSET(sck_server, &readSck)) {
@@ -716,6 +932,7 @@ namespace server {
 					std::string ip(inet_ntoa(address.sin_addr));
 					if (std::find(banList.begin(), banList.end(), ip) == banList.end()) {
 						users.push_back(sck_connection);
+						setsockopt(users[users.size() - 1], IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(int));
 						ips.push_back(ip);
 						printf("Client %i connected (%s)! \n", userNum++, ip.c_str());
 					}
@@ -737,6 +954,7 @@ namespace server {
 		}
 		WSACleanup();
 		if(timer != NULL) delete timer;
+		delete newArrows;
 		return 0;
 	}
 }
