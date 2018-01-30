@@ -53,6 +53,9 @@
     <ClInclude Include="c_Time.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="UDPClient.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shader.glsl" />

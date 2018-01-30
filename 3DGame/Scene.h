@@ -318,8 +318,8 @@ namespace Game {
 			free(points);
 			delete markerShader;
 		}
-		Marker(Shader ** markerShader, int amount) {
-			this->markerShader = *markerShader;
+		Marker(Shader * markerShader, int amount) {
+			this->markerShader = markerShader;
 			size = amount;
 			points = (float*)calloc(amount * 3, sizeof(float));
 			glGenVertexArrays(1, &VAO);
@@ -333,8 +333,8 @@ namespace Game {
 		void draw(glm::mat4 model, glm::mat4 projection, glm::mat4 view) {
 			USE_SHADER(markerShader->id);
 			SHADER_SET_MAT4(markerShader->id, "model", model);
-			SHADER_SET_MAT4(markerShader->id, "projection", model);
-			SHADER_SET_MAT4(markerShader->id, "view", model);
+			SHADER_SET_MAT4(markerShader->id, "projection", projection);
+			SHADER_SET_MAT4(markerShader->id, "view", view);
 //			markerShader->setVec3("color", glm::vec3(0, 191, 255));
 			glBindVertexArray(VAO);
 			glPointSize(20.f);
@@ -530,39 +530,60 @@ namespace Game {
 		void conversationThread() {
 			client::getPid(player.pid);
 			while (true) {
-				clock_t startTime = clock();
-				client::startLoop();
-				if (UNLOCKED(timeLock) && isTimed) {
+				printf("Loop \n");
+//				clock_t startTime = clock();
+				#ifndef UDP
+					client::startLoop();
+				#endif
+				t_clock local_time;
+				double local_serverTime;
+				position local_user;
+				std::vector<position> local_positions;
+				std::vector<arrow_packet> local_serverArrows;
+				int local_kills, local_leaderKills;
+				std::string local_name, local_leaderName;
+				arrow_packet local_deathArrow;
+				bool local_died = false;
+				printf("0 \n");
+				if (deathCond.getNotifications()) {
+					local_deathArrow = deathArrow.toPacket();
+					local_died = true;
+					deathCond.handleNotification();
+				}
+				printf("0.5 \n");
+				client::getData(local_kills, local_leaderKills, local_leaderName, local_time, local_serverTime, local_name, local_positions, local_serverArrows);
+				printf("0.7 \n");
+				if (UNLOCKED(timeLock)) {
 					timeLock = true;
-					client::getTime(time);
-					if (time.minutes == -2 && time.seconds == 0) isTimed = false;
+					time = local_time;
+					printf("Time: %d : %d \n", local_time.minutes, local_time.seconds);
 					timeLock = false;
 				}
+
 				std::unique_lock<std::mutex> timeLock(timeMutex);
-				client::getServerTime(serverTime);
+				serverTime = local_serverTime;
 				pcTime = glfwGetTime(); //glfwGetTime() is thread safe
 				timeLock.unlock();
 
 				std::unique_lock<std::mutex> arrLock(arrowMutex);
 				if (arrowIds.size() <= 5) {
-					for (int i = arrowIds.size(); i < 10; i++) {
-						unsigned long long id;
-						client::getNewArrowId(id);
-						arrowIds.push(id);
-					}
+					client::getNewArrowId(arrowIds);
 				}
 				arrLock.unlock();
 
-				std::unique_lock<std::mutex> posLock(positionMutex);
-				client::sendPos(user);
-				posLock.unlock();
-				
+				printf("1 \n");
 				THREAD_WAIT_UNTIL(playerLock);
 				playerLock = true;
-				client::getPos(positions);
+				positions = local_positions;
 				playerCond.notify();
 				playerLock = false;
+				
+				printf("2 \n");
+				std::unique_lock<std::mutex> posLock(positionMutex);
+				local_user = user;
+				posLock.unlock();
 
+				printf("3 \n");
 				THREAD_WAIT_UNTIL(arrowLock);
 				arrowLock = true;
 				std::vector<arrow_packet> sendToArrows;
@@ -572,6 +593,7 @@ namespace Game {
 				arrowLock = false;
 				
 				if (backupCond.getNotifications()) {
+					printf("4 \n");
 					THREAD_WAIT_UNTIL(backupLock);
 					if (arrowsToBeAdded.size() > 0) {
 						while (!arrowsToBeAdded.empty()) {
@@ -581,56 +603,52 @@ namespace Game {
 					}
 					backupCond.handleNotification();
 				}
-//				printf("Sending %d arrows: ", sendToArrows.size());
-				for (int i = 0; i < sendToArrows.size(); i++) {
-//					printf("%d ", sendToArrows[i].arrowId);
-					client::sendExistingArrow(sendToArrows[i]);
-				}
-//				printf("\n");
+				printf("5 \n");
+				client::sendPlayerData(local_user, sendToArrows, local_died, local_deathArrow);
+				printf("6 \n");
 				THREAD_WAIT_UNTIL(serverArrowLock);
 				serverArrowLock = true;
-				serverArrows.erase(serverArrows.begin(), serverArrows.end());
-				client::getArrows(serverArrows);
+				serverArrows = local_serverArrows;
 				arrowCond.notify();
 				serverArrowLock = false;
 
 				if (UNLOCKED(killsLock)) {
 					killsLock = true;
-					client::getKills(kills);
+					kills = local_kills;
 					killsCond.notify();
 					killsLock = false;
 				}
+				
 				if (UNLOCKED(leaderLock)) {
 					leaderLock = true;
-					client::getLeader(leaderKills, leaderName);
+					leaderKills = local_leaderKills;
+					leaderName = local_leaderName;
 					leaderCond.notify();
 					leaderLock = false;
 				}
+				
 				if (UNLOCKED(nameLock)) {
 					nameLock = true;
-					char * _name;
-					client::getName(&_name);
-					username = _name;
-					delete[] _name;
+					username = local_name;
 					nameLock = false;
 
 				}
-				if (deathCond.getNotifications()) {
-					client::notifyDeath(deathArrow.toPacket());
-					deathCond.handleNotification();
-				}
+				printf("7 \n");
 				if (commandCond.getNotifications() && commandLock == false) {
 					commandLock = true;
 					client::sendCommand(newCommand);
 					commandCond.handleNotification();
 					commandLock = false;
 				}
+//				/*
 				if (leaveCond.getNotifications()) {
 					client::shutdown();
 					break;
 				}
-				if(!msgDone) printf("Messaging loop took: %f \n", (clock() - startTime) / (double)CLOCKS_PER_SEC);
-				msgDone = true;
+				printf("8 \n");
+//				if(!msgDone) printf("Messaging loop took: %f \n", (clock() - startTime) / (double)CLOCKS_PER_SEC);
+//				msgDone = true;
+//				*/
 			}
 
 		}
@@ -892,10 +910,11 @@ namespace Game {
 			houseNormal = loadTexture("Assets/house_normal.tga");
 			knightTexture = loadTexture("Assets/chevalier.bmp");
 			markerShader = new Shader("simple.glslbin", "simple.fragbin", true);
-			marker = new Marker(&markerShader, 1);
+			marker = new Marker(markerShader, 1);
 			client::startup(ip);
 			if (client::sendName(username) == 0) {
 				connected = true;
+				printf("Client connected \n");
 //				client::getPid(player.pid);
 				std::thread t(&Scene::conversationThread, this);
 				t.detach();
@@ -997,8 +1016,8 @@ namespace Game {
 			soundEngine->play2D("Assets/sounds/arrowShoot.wav");
 //			newArrow.notify();
 			Arrow arr = Arrow(cam, arrow, player.pid, getTime());
-/*			if(client::getNewArrowId(arr.getId()) != 0) arr.getId() = 0;
-			arrows->addElement(arr);*/
+//			if(client::getNewArrowId(arr.getId()) != 0) arr.getId() = 0;
+	//		arrows->addElement(arr);
 			arr.newShot = true;
 			if (connected) {
 				std::lock_guard<std::mutex> guard(arrowMutex);
@@ -1332,6 +1351,7 @@ namespace Game {
 				time = clock();
 			}*/
 #pragma endregion
+
 #pragma region DrawBow/Arrows/Players
 			if (!depthPass) {
 				model = glm::mat4();
@@ -1380,6 +1400,7 @@ namespace Game {
 					}
 					arrowLock = false;
 				}
+//				serverArrows.erase(serverArrows.begin(), serverArrows.end());
 				if (connected == false/*client::getArrows(serverArrows) != 0*/) {
 					//offline
 					allArrows.erase(allArrows.begin(), allArrows.end());
@@ -1451,12 +1472,13 @@ namespace Game {
 						model = glm::translate(model, glm::vec3(p.x, p.y - 0.7, p.z));
 						model = glm::rotate(model, glm::radians(-p.yaw + 90.f), glm::vec3(0, 1, 0));
 						model = glm::scale(model, glm::vec3(.4));
-						SHADER_SET_MAT4(shader, "model", model);("model", model);
+						SHADER_SET_MAT4(shader, "model", model); ("model", model);
+						knight.Draw(shader);
 						glActiveTexture(GL_TEXTURE1);
 						glBindTexture(GL_TEXTURE_2D, knightTexture);
 						knight.Draw(shader);
 						if (p.allied) {
-							printf("Allied \n");
+//							printf("Allied \n");
 							model = glm::mat4();
 							model = glm::translate(model, glm::vec3(p.x, p.y + 0.2, p.z));
 							marker->draw(model, projection, view);

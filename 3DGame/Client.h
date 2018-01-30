@@ -4,6 +4,7 @@
 #include <WinSock2.h>
 #include <cstdio>
 #include <vector>
+#include <queue>
 #include "c_Time.h"
 #define SCK_CLOSED -8300
 #define SCK_FD_NOT_SET -3200
@@ -68,7 +69,9 @@ namespace client {
 		p_getTimeNow,
 		p_sendExistingArrow,
 		p_getPid,
-		p_disableArrow
+		p_disableArrow,
+		p_data,
+		p_sendData
 	};
 	int disconnectClient(SOCKET sck) {
 		if (closed) return SCK_CLOSED;
@@ -93,11 +96,11 @@ namespace client {
 		if (closed) return SCK_CLOSED;
 		char recvData = 0;
 		int data = 0;
-		while (recvData < 4) {
+//		while (recvData < 4) {
 			char rec = recv(id, ((char*)&data) + recvData, 4 - recvData, NULL);
 			if (rec == SOCKET_ERROR && rec != WSAEWOULDBLOCK) { return disconnectClient(id); }
-			recvData += rec;
-		}
+//			recvData += rec;
+//		}
 		_data = ntohl(data);
 		return 0;
 
@@ -106,11 +109,11 @@ namespace client {
 		if (closed) return SCK_CLOSED;
 		char sentData = 0;
 		data = htonl(data);
-		while (sentData < 4) {
+//		while (sentData < 4) {
 			char sent = send(id, ((char*)&data) + sentData, 4 - sentData, NULL);
 			if (sent == SOCKET_ERROR && sent != WSAEWOULDBLOCK) return disconnectClient(id);
-			sentData += sent;
-		}
+//			sentData += sent;
+//		}
 		return 0;
 	}
 	int recvData(char * storage, int len, SOCKET id) {
@@ -143,6 +146,8 @@ namespace client {
 		if (connect(sck_connection, (SOCKADDR*)&serverAddr, sizeof(serverAddr)) != 0) {
 			printf("Connection error %d \n", WSAGetLastError());
 		}
+		int flag = 1;
+		setsockopt(sck_connection, IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(int));
 		u_long mode = 1;
 		ioctlsocket(sck_connection, FIONBIO, &mode);
 		FD_ZERO(&write);
@@ -150,6 +155,7 @@ namespace client {
 		FD_SET(sck_connection, &read);
 		FD_SET(sck_connection, &write);
 		printf("Client started \n");
+		printf("V1.28 \n");
 		return 0;
 	}
 	void sendCommand(std::string command) {
@@ -216,14 +222,21 @@ namespace client {
 		return 0;
 
 	}
-	int getNewArrowId(unsigned long long & id) {
+	int getNewArrowId(std::queue<unsigned long long> & ids) {
 		if (closed) return SCK_CLOSED;
 		if (FD_ISSET(sck_connection, &write)) {
 			Packet p = p_getArrowId;
 			IF(sendInt(sck_connection, p));
 			switchMode(SCK_BLOCK);
-			IF(recvData((char*)&id, sizeof(unsigned long long), sck_connection));
+			char * id = new char[sizeof(unsigned long long) * 10];
+			IF(recvData(id, sizeof(unsigned long long) * 10, sck_connection));
 			switchMode(SCK_NON_BLOCK);
+			for (int i = 0; i < 10; i++) {
+				unsigned long long j;
+				memcpy_s((char*)&j, sizeof(long long), id + (i * sizeof(long long)), sizeof(long long));
+				ids.push(j);
+			}
+			delete[] id;
 			return 0;
 		}
 		else {
@@ -353,6 +366,154 @@ namespace client {
 		IF(sendInt(sck_connection, packet));
 		IF(sendInt(sck_connection, deathArrow.shooter));
 		return 0;
+	}
+	int sendPlayerData(position pos, std::vector<arrow_packet> & arrows, bool died = false, arrow_packet deathArrow = {}) {
+		if (closed) return SCK_CLOSED;
+		if (!FD_ISSET(sck_connection, &write)) return SCK_FD_NOT_SET;
+		int buffSize = 21 + (arrows.size() * 42) + 1 + (died * 4);
+		char * buff = new char[buffSize];
+		memset(buff, 0, buffSize);
+		printf("Sending data of size: %d \n", buffSize);
+		char * buffer = buff;
+		memcpy_s(buffer, 21, &pos.x, 4);
+		memcpy_s(buffer + 4, 17, &pos.y, 4);
+		memcpy_s(buffer + 8, 13, &pos.z, 4);
+		memcpy_s(buffer + 12, 9, &pos.yaw, 4);
+		memcpy_s(buffer + 16, 5, &pos.pitch, 4);
+		memcpy_s(buffer + 20, 1, &pos.movement, 1);
+		int arrowsSize = arrows.size();
+		printf("Sending arrows size %d \n", arrowsSize);
+		memcpy_s(buffer + 21, sizeof(int), &arrowsSize, sizeof(int)); //issue here
+		buffer += 25;
+		for (int i = 0; i < arrows.size(); i++) {
+			arrow_packet pack = arrows[i];
+			memcpy_s(buffer, 42, &pack.x, 4);
+			memcpy_s(buffer + 4, 38, &pack.y, 4);
+			memcpy_s(buffer + 8, 34, &pack.z, 4);
+			memcpy_s(buffer + 12, 30, &pack.velX, 4);
+			memcpy_s(buffer + 16, 26, &pack.velY, 4);
+			memcpy_s(buffer + 20, 22, &pack.velZ, 4);
+			memcpy_s(buffer + 24, 18, &pack.clock, 8);
+			memcpy_s(buffer + 32, 10, &pack.newShot, 1);
+			memcpy_s(buffer + 33, 9, &pack.isLive, 1);
+			memcpy_s(buffer + 34, 8, &pack.arrowId, 8);
+			buffer += 42;
+		}
+		memcpy_s(buffer + 1, sizeof(bool), &died, sizeof(bool));
+		if (died) {
+			arrow_packet pack = deathArrow;
+			memcpy_s(buffer + 2, 4, &pack.shooter, sizeof(int));
+		}
+		Packet p = p_sendData;
+		switchMode(SCK_BLOCK);
+		IF(sendInt(sck_connection, p));
+		IF(sendInt(sck_connection, buffSize));
+		IF(sendData(buff, buffSize, sck_connection));
+		switchMode(SCK_NON_BLOCK);
+		delete[] buff;
+		return 0;
+
+	}
+	int getData(int & kills, int & leaderKills, std::string & leaderName, t_clock & clock, double & elapsed, 
+		std::string & name, std::vector<position> & players, std::vector<arrow_packet> & arrows) {
+		//3 packets
+		if (closed) return SCK_CLOSED;
+		if (!FD_ISSET(sck_connection, &write)) return SCK_FD_NOT_SET;
+		Packet p = p_data;
+		IF(sendInt(sck_connection, p));
+		if (FD_ISSET(sck_connection, &read)) {
+			/*
+				kills			4
+				leaderKills		4
+				nameSize		4
+				leaderName		nameSize
+				minutes			4
+				seconds			4
+				elapsed			8
+				nameSize		4
+				name			nameSize
+				playersSize		4
+				[players]		playerSize * 22
+				arrowsSize		4
+				[arrows]		arrowsSize * 44
+			
+			*/
+			switchMode(SCK_BLOCK);
+			int size;
+			IF(recvInt(sck_connection, size));
+
+			char * buffer = new char[size];
+			IF(recvData(buffer, size, sck_connection));
+
+			memcpy_s(&kills, sizeof(int), buffer, sizeof(int));
+			printf("Kills: %d \n", kills);
+			memcpy_s(&leaderKills, sizeof(int), buffer + 4, sizeof(int));
+			printf("LeaderKills: %d \n", leaderKills);
+			int nameSize;
+			memcpy_s(&nameSize, sizeof(int), buffer + 8, sizeof(int));
+			char * lName = new char[nameSize + 1];
+			memcpy_s(lName, nameSize, buffer + 12, nameSize);
+			lName[nameSize] = '\0';
+			printf("Name: %s of size: %d \n", lName, strlen(lName));
+			leaderName = lName;
+			if(nameSize > 1) delete[] lName;
+			memcpy_s(&clock.minutes, sizeof(int), buffer + 12 + nameSize, sizeof(int));
+			memcpy_s(&clock.seconds, sizeof(int), buffer + 16 + nameSize, sizeof(int));
+			printf("Time| %d:%d \n", clock.minutes, clock.seconds);
+			memcpy_s(&elapsed, sizeof(double), buffer + 20 + nameSize, sizeof(double));
+			printf("Elapsed time: %f \n", elapsed);
+			int usernameSize;
+			memcpy_s(&usernameSize, sizeof(int), buffer + 28 + nameSize, sizeof(int));
+			char * uName = new char[usernameSize + 1];
+			memcpy_s(uName, usernameSize, buffer + 32 + nameSize, usernameSize);
+			uName[usernameSize] = '\0';
+			printf("Username: %s of size %d \n", uName, strlen(uName));
+			name = uName;
+			if(usernameSize > 1) delete[] uName;
+			int playerCount;
+			memcpy_s(&playerCount, sizeof(int), buffer + 32 + nameSize + usernameSize, sizeof(int));
+			printf("Player count: %d \n", playerCount);
+			char * buff = buffer + 36 + nameSize + usernameSize;
+//			if (players.size() < playerCount) players.resize(playerCount);
+			for (int i = 0; i < playerCount; i++) {
+				position player;
+				memcpy_s(&player.x, 4, buff, 4);
+				memcpy_s(&player.y, 4, buff + 4, 4);
+				memcpy_s(&player.z, 4, buff + 8, 4);
+				printf("Player coord: %f:%f:%f \n", player.x, player.y, player.z);
+				memcpy_s(&player.yaw, 4, buff + 12, 4);
+				memcpy_s(&player.pitch, 4, buff + 16, 4);
+				memcpy_s(&player.movement, 1, buff + 20, 1);
+				memcpy_s(&player.allied, 1, buff + 21, 1);
+				players.push_back(player);
+				buff += 22;
+			}
+			int arrowCount;
+			memcpy_s(&arrowCount, sizeof(int), buff, sizeof(int));
+			printf("Arrow count: %d \n", arrowCount);
+			buff += 4;
+			for (int i = 0; i < arrowCount; i++) {
+				arrow_packet arr{};
+				memcpy_s(&arr.x, 4, buff, 4);
+				memcpy_s(&arr.y, 4, buff + 4, 4);
+				memcpy_s(&arr.z, 4, buff + 8, 4);
+				printf("Arrow coord: %f:%f:%f \n", arr.x, arr.y, arr.z);
+				memcpy_s(&arr.velX, 4, buffer + 12, 4);
+				memcpy_s(&arr.velY, 4, buffer + 16, 4);
+				memcpy_s(&arr.velZ, 4, buffer + 20, 4);
+				memcpy_s(&arr.clock, 8, buffer + 24, 8);
+				memcpy_s(&arr.shooter, 2, buffer + 32, 2);
+				memcpy_s(&arr.newShot, 1, buffer + 34, 1);
+				memcpy_s(&arr.isLive, 1, buffer + 35, 1);
+				memcpy_s(&arr.arrowId, 8, buffer + 36, 8);
+				buff += 44;
+				arrows.push_back(arr);
+			}
+			delete[] buffer;
+			switchMode(SCK_NON_BLOCK);
+			return 0;
+		}
+		return SCK_FD_NOT_SET;
 	}
 	int getKills(int & kills) {
 		if (closed) return SCK_CLOSED;

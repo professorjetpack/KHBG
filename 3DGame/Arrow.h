@@ -1,6 +1,10 @@
 #ifndef ARROW_H
 #define ARROW_H
-#include "Client.h"
+#ifndef UDP
+	#include "Client.h"
+#else
+	#include "UDPClient.h"
+#endif
 #include "Camera.h"
 #include "Assimp.h"
 namespace Game {
@@ -89,10 +93,10 @@ namespace Game {
 			else if(shadowParams & ARROW_HAS_SHADOW && !(shadowParams & ARROW_DEPTH_PASS)){
 				model = glm::mat4();
 				double gravity = 8;
-				double timeNow;
+/*				double timeNow;
 				if (client::getServerTime(timeNow) != 0) {
 					timeNow = glfwGetTime();
-				}
+				}*/
 				if (isLive) {
 					velocity.y = velocity.y - (gravity * ((timeNow - clock) / 1000.0));
 					pos += velocity * glm::vec3(20) * glm::vec3(dt);
