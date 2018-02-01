@@ -399,10 +399,10 @@ namespace client {
 			memcpy_s(buffer + 34, 8, &pack.arrowId, 8);
 			buffer += 42;
 		}
-		memcpy_s(buffer + 1, sizeof(bool), &died, sizeof(bool));
+		memcpy_s(buffer, sizeof(bool), &died, sizeof(bool));
 		if (died) {
 			arrow_packet pack = deathArrow;
-			memcpy_s(buffer + 2, 4, &pack.shooter, sizeof(int));
+			memcpy_s(buffer + 1, 4, &pack.shooter, sizeof(int));
 		}
 		Packet p = p_sendData;
 		switchMode(SCK_BLOCK);
