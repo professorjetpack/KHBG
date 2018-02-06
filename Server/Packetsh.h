@@ -55,7 +55,7 @@ namespace server {
 		float z;
 		float yaw;
 		float pitch;
-		byte movement;
+		int movement;
 	};
 	struct arrow_packet {
 		float x, y, z;
@@ -86,6 +86,7 @@ namespace server {
 	bool teams, admins;
 	unsigned short password;
 	Timer * timer;
+	char * buffer;
 	ServerTime time;
 	unsigned long long arrowId;
 	uint16_t arrowClock = 0;
@@ -120,18 +121,40 @@ namespace server {
 		}
 		return buffer;
 	}
+	inline void cpy(char * dest, int source) {
+/*		*dest = source >> 24;
+		*(dest + 1) = source >> 16;
+		*(dest + 2) = source >> 8;
+		*(dest + 3) = source;*/
+		*dest		= source & 0x00FFFFFF;
+		*(dest + 1) = source & 0xFF00FFFF;
+		*(dest + 2) = source & 0xFFFF00FF;
+		*(dest + 3) = source & 0xFFFFFF00;
+
+	}
+	inline void cpy(int & dest, char * source) {
+		dest &= *source << 24;
+		dest &= *(source + 1) << 16;
+		dest &= *(source + 2) << 8;
+		dest &= *(source + 3);
+	}
+	inline void cpy(bool dest, char * source) {
+		dest = *source;
+	}
 //	std::mutex mu;
 	int disconnectClient(ID id, char * reason = "socket error") {
 //		if (IS_DISCONNECT(id)) return id;
 		printf("Disconnecting client %i; Reason: %s \n", id, reason);
 		printf("Disconnect error code: %d \n", WSAGetLastError());
 		auto it = std::find(users.begin(), users.end(), users[id]);
-		if (it != users.end()) users.erase(it);
+		if (it != users.end()) {
+			closesocket(users[id]);
+			users.erase(it);
+		}
 		else {
 			printf("Could not delete user from list \n");
 			return 0;
 		}
-		closesocket(users[id]);
 		userNum--;
 		kills.erase(id);
 		players.erase(id);
@@ -356,11 +379,15 @@ namespace server {
 							switchMode(i, SCK_BLOCK);
 							int size = recvInt(i);
 							if (size == SCK_CLOSED) continue;
-							char * buffer = new char[size];
+							
+							buffer = new char[size];
+							
 							printf("Recieving data of size: %d \n", size);
 							if (recvData(buffer, size, i) == SCK_CLOSED) continue;
 							switchMode(i, SCK_NO_BLOCK);
 							position pos;
+							int arrowsSize = 0;
+
 							memcpy_s(&pos.x, 4, buffer, 4);
 							memcpy_s(&pos.y, 4, buffer + 4, 4);
 							memcpy_s(&pos.z, 4, buffer + 8, 4);
@@ -368,10 +395,17 @@ namespace server {
 							memcpy_s(&pos.pitch, 4, buffer + 16, 4);
 							memcpy_s(&pos.movement, 1, buffer + 20, 1);
 							players[i] = pos;
-							printf("Pos: %f:%f:%f \n", pos.x, pos.y, pos.z);
+							printf("Player: \n");
+							printf("X: %f Y: %f Z: %f \n", pos.x, pos.y, pos.z);
+							printf("Yaw: %f Pitch: %f \n", pos.yaw, pos.pitch);
+							printf("Movement byte: %d \n", pos.movement);
 							printf("Player updated \n");
-							int arrowsSize;
+							
+
 							memcpy_s(&arrowsSize, sizeof(int), buffer + 21, sizeof(int)); //issue here
+//							cpy(arrowsSize, buffer + 21);
+							
+
 							printf("Arrows Size: %d \n", arrowsSize);
 							char * buff = buffer + 25;
 							if (arrowsSize > 0) {
@@ -389,17 +423,24 @@ namespace server {
 									memcpy_s(&nArrow.arrowId, 8, buff + 34, 8);
 									buff += 42;
 									nArrow.shooter = i;
+									bool exists = false;
 									for (auto it = newArrows->begin(); it != newArrows->end(); it++) {
-										if ((*it).arrowId == nArrow.arrowId) {
+			 							if ((*it).arrowId == nArrow.arrowId) {
 											(*it) = nArrow;
+											exists = true;
 											break;
 										}
 									}
-									newArrows->addElement(nArrow);
+									if (!exists) {
+										newArrows->addElement(nArrow);
+									}
 								}
 							}
-							bool died;
+							bool died = false;
 							memcpy_s(&died, sizeof(bool), buff, sizeof(bool));
+//							cpy(died, buff);
+//							died = *buff;
+
 							printf("Is dead: %d \n", died);
 							if (died) {
 								int killer;
