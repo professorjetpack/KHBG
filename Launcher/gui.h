@@ -9,10 +9,12 @@
 #include <initializer_list>
 namespace gui {
 #define GUI_PARAM_AND |
-#define and GUI_PARAM_AND
 #define GUI_PARAM_EXCLUDE ^
-#define exclude GUI_PARAM_EXCLUDE
-	namespace util {
+#ifndef GUI_MACRO_DESC_ONLY
+	#define and GUI_PARAM_AND
+	#define exclude GUI_PARAM_EXCLUDE
+#endif //GUI_MACRO_DESC_ONLY
+	namespace {
 		std::string loadFromTextFileToWin32ControlTextFormat(char * file) {
 			std::ifstream input;
 			input.open(file);
@@ -27,31 +29,37 @@ namespace gui {
 			return fileText;
 		}
 	}
+	class GUI {
+	private:
+		GUI() {};
+		static HWND window;
+	public:
+		inline static void bindWindow(HWND wnd) { window = wnd; }
+		inline static HWND useWindow() { return window; }
+		inline static char * textFieldLoadFromFile(char * file) { return (char*)loadFromTextFileToWin32ControlTextFormat(file).c_str(); }
+	};
 	class Control {
 	protected:
 		HWND handle;
 		HWND parent;
 		bool selfHandle;
+		std::string name;
 	public:
 		Control(): selfHandle(false){}
 		~Control() { DestroyWindow(handle); }
-		virtual void hideComponent() {
+		inline virtual void hideComponent() {
 			ShowWindow(handle, SW_HIDE);
 		}
-		virtual void showComponent() {
+		inline virtual void showComponent() {
 			ShowWindow(handle, SW_SHOW);
 		}
-		void setParent(HWND window) {
-			parent = window;
-			SetParent(handle, parent);
-		}
-		virtual bool msgFromControl(MSG * msg) {
+		inline virtual bool msgFromControl(MSG * msg) {
 			return msg->hwnd == handle;
 		}
-		bool doesDefaultMsgHandle() { return selfHandle; }
-		virtual void handleMsg(MSG * msg) {
-			if (!selfHandle) return;
-		}
+		inline bool doesDefaultMsgHandle() { return selfHandle; }
+		virtual void handleMsg(MSG * msg) {};
+
+		inline std::string getName() { return name; }
 	};
 #define GUI_BUTTON_LIGHT_BORDER (BS_DEFPUSHBUTTON)
 	class Button : public Control {
@@ -63,8 +71,9 @@ namespace gui {
 			selfHandle = false;
 		}
 	public:
-		Button(int x, int y, int width, int height, char * title, HWND window, void(*onClick)() = NULL, int params = NULL) {
+		Button(char * id,  int x, int y, int width, int height, char * title, void(*onClick)() = NULL, int params = NULL, HWND window = GUI::useWindow()) {
 			parent = window;
+			name = id;
 			if (onClick != NULL) {
 				selfHandle = true;
 				this->onClick = onClick;
@@ -77,7 +86,7 @@ namespace gui {
 		Button() {
 			init();
 		}
-		void setClick(void(*click)()) {
+		inline void setClick(void(*click)()) {
 			selfHandle = true;
 			onClick = click;
 		}
@@ -89,19 +98,21 @@ namespace gui {
 	};
 #define GUI_TEXTFIELD_VERT_SCROLL (ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL)
 #define GUI_TEXTFIELD_HOR_SCROLL (ES_AUTOHSCROLL | WS_HSCROLL)
-#define GUI_TEXTFIELD_LOAD_FROM_FILE(fileName) ((char*)(util::loadFromTextFileToWin32ControlTextFormat((fileName)).c_str()))
-#define GUI_TEXTFIELD_MULTILINE (ES_MULTI)
+#define GUI_TEXTFIELD_MULTILINE (ES_MULTILINE)
+#define GUI_TEXTFIELD_PASSFIELD (ES_PASSWORD)
 	class TextField : public Control {
 	protected:
 		void init() {
 			handle = CreateWindow("EDIT", "", WS_CHILD, 0, 0, 100, 50, parent, NULL, NULL, NULL);
 		}
 	public:
-		TextField(int x, int y, int width, int height, HWND window, int params = NULL) {
+		TextField(char * id, int x, int y, int width, int height, int params = NULL, HWND window = GUI::useWindow()) {
+			name = id;
 			parent = window;
 			handle = CreateWindow("EDIT", "", WS_CHILD | WS_VISIBLE | params, x, y, width, height, parent, NULL, NULL, NULL);
 		}
-		TextField(int x, int y, int width, int height, char * text, HWND window, bool typing = true, int params = NULL) {
+		TextField(char * id, int x, int y, int width, int height, char * text, bool typing = true, int params = NULL, HWND window = GUI::useWindow()) {
+			name = id;
 			parent = window;
 			if (!typing) selfHandle = true;
 			handle = CreateWindow("EDIT", "", WS_CHILD | WS_VISIBLE | params, x, y, width, height, parent, NULL, NULL, NULL);
@@ -120,6 +131,9 @@ namespace gui {
 			if (msg->message == WM_LBUTTONDOWN && msg->hwnd == handle)
 				SetFocus(parent);
 				
+		}
+		void setPasswordChar(char echo) {
+			SendMessage(handle, EM_SETPASSWORDCHAR, echo, NULL);
 		}
 		void setText(char * text) {
 			SetWindowText(handle, text);
@@ -140,12 +154,14 @@ namespace gui {
 			SetWindowText(handle, "Label:");
 		}
 	public:
-		Label(int x, int y, char * text, HWND window, int params = NULL) {
+		Label(char * id, int x, int y, char * text, int params = NULL, HWND window = GUI::useWindow()) {
+			name = id;
 			parent = window;
 			handle = CreateWindow("STATIC", "ST_U", WS_CHILD | WS_VISIBLE | params, x, y, strlen(text) * 10, 20, parent, NULL, NULL, NULL);
 			SetWindowText(handle, text);
 		}
-		Label(int x, int y, int width, int height, char * text, HWND window, int params = NULL) {
+		Label(char * id, int x, int y, int width, int height, char * text, int params = NULL, HWND window = GUI::useWindow()) {
+			name = id;
 			parent = window;
 			handle = CreateWindow("STATIC", "ST_U", WS_CHILD | WS_VISIBLE | params, x, y, width, height, parent, NULL, NULL, NULL);
 			SetWindowText(handle, text);
@@ -161,7 +177,8 @@ namespace gui {
 		int lastY;
 		int X;
 	public:
-		Radiobutton(int x, int y, char * text, HWND window, int params = NULL) : lastY(y), X(x) {
+		Radiobutton(char * id, int x, int y, char * text, int params = NULL, HWND window = GUI::useWindow()) : lastY(y), X(x) {
+			name = id;
 			selfHandle = true;
 			parent = window;
 			handle = CreateWindow("BUTTON", text, WS_VISIBLE | WS_CHILD | BS_RADIOBUTTON | params, x, y, (strlen(text) * 10) + 30, 20, window, NULL, NULL, NULL);
@@ -178,7 +195,8 @@ namespace gui {
 			HWND handle = CreateWindow("BUTTON", text, WS_VISIBLE | WS_CHILD | BS_RADIOBUTTON | params, X, lastY, (strlen(text) * 10) + 30, 20, parent, NULL, NULL, NULL);
 			handles.push_back(handle);
 		}
-		Radiobutton(int x, int y, std::initializer_list<char*> choices, HWND window, int params = NULL) : lastY(y), X(x) {
+		Radiobutton(char * id, int x, int y, std::initializer_list<char*> choices, int params = NULL, HWND window = GUI::useWindow()) : lastY(y), X(x) {
+			name = id;
 			std::vector<char*> titles;
 			for (char * text : choices) {
 				titles.push_back(text);
@@ -246,7 +264,8 @@ namespace gui {
 	private:
 		void(*onClick)();
 	public:
-		Checkbox(int x, int y, char * text, HWND window, void(*click)() = NULL, int params = NULL){
+		Checkbox(char * id, int x, int y, char * text, void(*click)() = NULL, int params = NULL, HWND window = GUI::useWindow()){
+			name = id;
 			parent = window;
 			handle = CreateWindow("BUTTON", text, WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX | params, x, y, 30 + (strlen(text) * 10), 20, window, NULL, NULL, NULL);
 			if (click != NULL) {
@@ -272,16 +291,19 @@ namespace gui {
 		std::string selected;
 		int selectedIndex;
 	public:
-		Combobox(int x, int y, int width, int height, HWND window, void(*select)(std::string, int) = NULL, int params = NULL) {
+		Combobox(char * id, int x, int y, int width, int height, void(*select)(std::string, int) = NULL, int params = NULL, HWND window = GUI::useWindow()) {
+			name = id;
 			parent = window;
 			selfHandle = true;
 			onSelect = select;
 			handle = CreateWindow("COMBOBOX", "Test", CBS_DROPDOWN | CBS_HASSTRINGS | WS_CHILD | WS_VISIBLE | params, x, y, width, height, window, NULL, NULL, NULL);
 		}
-		void addChoice(char * choice) {
+		inline void addChoice(char * choice) {
 			SendMessage(handle, CB_ADDSTRING, 0, (LPARAM)choice);
 		}
-		Combobox(int x, int y, std::initializer_list<char*> list, int width, HWND window, int defaultSelection = 0, void(*select)(std::string, int) = NULL, int params = NULL) {
+		Combobox(char * id, int x, int y, std::initializer_list<char*> list, int width, int defaultSelection = 0, 
+			void(*select)(std::string, int) = NULL, int params = NULL, HWND window = GUI::useWindow()) {
+			name = id;
 			parent = window;
 			onSelect = select;
 			handle = CreateWindow("COMBOBOX", "Test", CBS_DROPDOWN | CBS_HASSTRINGS | WS_CHILD | WS_VISIBLE | WS_OVERLAPPED | params , x, y, width, list.size() * 50, window, NULL, NULL, NULL);
@@ -292,7 +314,7 @@ namespace gui {
 			}
 			SendMessage(handle, CB_SETCURSEL, defaultSelection, 0);
 		}
-		void selectChoice(int choice) {
+		inline void selectChoice(int choice) {
 			SendMessage(handle, CB_SETCURSEL, choice, 0);
 		}
 		int getSelected(std::string & selectedName) {
@@ -302,26 +324,38 @@ namespace gui {
 			selectedName = listItem;
 			return index;
 		}
+		void handleMsg(MSG * msg) {
+			if (msg->hwnd == handle && msg->message == WM_COMMAND && HIWORD(msg->wParam) == CBN_SELCHANGE) {
+				std::string name;
+				int index = getSelected(name);
+				onSelect(name, index);
+			}
+		}
 	};
 	class Slider : public Control {
 	public:
-		Slider(int x, int y, int width, int height, int g_min, int g_max, HWND window, int params = NULL) {
+		Slider(char * id, int x, int y, int width, int height, int g_min, int g_max, int params = NULL, HWND window = GUI::useWindow()) {
+			name = id;
 			handle = CreateWindow(TRACKBAR_CLASS, "", WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_ENABLESELRANGE | params, x, y, width, height, window, NULL, NULL, NULL);
 			SendMessage(handle, TBM_SETRANGE, TRUE, MAKELONG(g_min, g_max));
 			SendMessage(handle, TBM_SETPOS, TRUE, g_max);
 
 		}
-		void setPos(int pos) {
+		inline void setPos(int pos) {
 			SendMessage(handle, TBM_SETPOS, TRUE, pos);
 		}
-		int getPos() {
+		inline int getPos() {
 			return SendMessage(handle, TBM_GETPOS, 0, 0);
+		}
+		inline void setRange(int g_min, int g_max) {
+			SendMessage(handle, TBM_SETRANGE, TRUE, MAKELONG(g_min, g_max));
 		}
 	};
 
 	class Page {
 	private:
 		std::vector<Control*> controls;
+		std::map<std::string, int> controlList;
 		std::string name;
 		bool shown;
 	public:
@@ -329,6 +363,7 @@ namespace gui {
 		Page(std::string name, std::initializer_list<Control*> list) : name(name), shown(false) {
 			for (Control * c : list) {
 				controls.push_back(c);
+				controlList.insert(std::pair<std::string, int>(c->getName(), controls.size() - 1));
 			}
 		}
 		~Page() {
@@ -336,8 +371,9 @@ namespace gui {
 				delete controls[i];
 			}
 		}
-		void addControl(Control & control) {
-			controls.push_back(&control);
+		void addControl(Control * control) {
+			controls.push_back(control);
+			controlList.insert(std::pair<std::string, int>(control->getName(), controls.size() - 1));
 		}
 		void showPage(bool show) {
 			shown = show;
@@ -363,19 +399,22 @@ namespace gui {
 			if (i < controls.size()) return controls[i];
 			else return NULL;
 		}
-		std::string getName() { return name; }
-		bool isCurrentPage() { return shown; }
+		Control * getControl(std::string name) {
+			return controls[controlList[name]];
+		}
+		inline std::string getName() { return name; }
+		inline bool isCurrentPage() { return shown; }
 	};
 	class MainPage {
 	private:
 		std::vector<Page*> pages;
-//		std::map<std::string, int> pageList;
+		std::map<std::string, int> pageList;
 	public:
 		MainPage(){}
 		MainPage(std::initializer_list<Page*> list) {
 			for (Page* p : list) {
 				pages.push_back(p);
-//				pageList.insert(std::pair<std::string, int>(p->getName(), pages.size() - 1));
+				pageList.insert(std::pair<std::string, int>(p->getName(), pages.size() - 1));
 			}			
 		}
 		~MainPage() {
@@ -385,7 +424,7 @@ namespace gui {
 		}
 		void addPage(Page* p) {
 			pages.push_back(p);
-//			pageList.insert(std::pair<std::string, int>(p->getName(), pages.size() - 1));
+			pageList.insert(std::pair<std::string, int>(p->getName(), pages.size() - 1));
 		}
 		void navigateTo(int i) {
 //			if (i == 2) MessageBox(NULL, "Navigation to 2", "", MB_OK);
@@ -397,7 +436,7 @@ namespace gui {
 				else pages[j]->showPage(false);
 			}
 		}
-/*		void navigateTo(std::string page) {
+		void navigateTo(std::string page) {
 			int i = pageList[page];
 			navigateTo(i);
 		}
@@ -405,16 +444,14 @@ namespace gui {
 		std::string getCurrentPage() {
 			for (int i = 0; i < pages.size(); i++) {
 				if (pages[i]->isCurrentPage()) {
-					auto it = std::find(pageList.begin(), pageList.end(), i);
-					if (it != pageList.end()) return (*it).first;
+					for (auto it = pageList.begin(); it != pageList.end(); it++) {
+						if ((*it).second == i) return (*it).first;
+					}
+					break;					
 				}
 			}
 			return "";
 		}
-		void handlePageMessages(std::string page, MSG msg) {
-			pages[pageList[page]]->handleMessages(msg);
-		}
-		*/
 		void handleMessage(MSG * msg) {
 			for (int i = 0; i < pages.size(); i++) {
 				if (pages[i]->isCurrentPage()) {

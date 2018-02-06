@@ -1,153 +1,294 @@
 #define _CRT_SECURE_NO_WARNINGS
-#include "File.h"
-#include <WinNls.h>
+#pragma comment(lib, "Winmm.lib")
+#include "gui.h"
+#include <windowsx.h>
 #include <ShObjIdl.h>
-#include <objbase.h>
 #include <ShlGuid.h>
+#include <fstream>
 #include <WinInet.h>
-#include <atlbase.h>
-void removeDirectory(char * directory) {
-	char dirPath[MAX_PATH];
-	sprintf_s(dirPath, MAX_PATH, "%s/Documents/%s", getenv("USERPROFILE"), directory);
-	std::vector<std::string> files;
-	files = getDirectory(dirPath);
-	char filePath[MAX_PATH];
-	for (int i = 0; i < files.size(); i++) {
-		sprintf_s(filePath, MAX_PATH, "%s\\%s", dirPath, files[i].c_str());
-		remove(filePath);
+using namespace gui;
+bool accepted = false;
+char * eula_string;
+int eulaSize;
+#define VERSION 1.28
+void eula() {
+	std::ifstream in;
+	in.open("eula.db", std::ios::binary);
+	if (in.is_open()) {
+		in.read((char*)&accepted, sizeof(bool));
+		if (!accepted) {
+			in.read((char*)&eulaSize, sizeof(eulaSize));
+			eula_string = new char[eulaSize + 1];
+			in.read(eula_string, eulaSize);
+			eula_string[eulaSize] = '\0';
+		}
 	}
-	RemoveDirectory(dirPath);
 }
-int unzipTo(BSTR zipFile, BSTR folder) {
-	HRESULT result;
-	IShellDispatch * pISD;
-	Folder * toFolder = NULL;
-	IDispatch * pItem;
-	VARIANT vDir, vFile, vOpt;
-	CoInitialize(NULL);
-	result = CoCreateInstance(CLSID_Shell, NULL, CLSCTX_INPROC_SERVER, IID_IShellDispatch, (void**)&pISD);
-	if (SUCCEEDED(result)) {
-		VariantInit(&vDir);
-		vDir.vt = VT_BSTR;
-		vDir.bstrVal = folder;
-		result = pISD->NameSpace(vDir, &toFolder);
-		if (SUCCEEDED(result)) {
-			Folder * fromFolder = NULL;
-			VariantInit(&vFile);
-			vFile.vt = VT_BSTR;
-			vFile.bstrVal = zipFile;
-			pISD->NameSpace(vFile, &fromFolder);
-			FolderItems * items = NULL;
-			fromFolder->Items(&items);
-			items->QueryInterface(IID_IDispatch, (void**)&pItem);
-
-			VariantInit(&vOpt);
-			vOpt.vt = VT_I4;
-			vOpt.lVal = FOF_NO_UI;
-
-			VARIANT newV;
-			VariantInit(&newV);
-			newV.vt = VT_DISPATCH;
-			newV.pdispVal = pItem;//items;
-
-			result = toFolder->CopyHere(newV, vOpt);
-			fromFolder->Release();
-			toFolder->Release();
-			CoUninitialize();
-			return 0;
-		}
-		else {
-			pISD->Release();
-			CoUninitialize();
-			return -1;
-		}
+void agreeEula() {
+	std::ofstream out;
+	out.open("eula.db", std::ios::binary);
+	if (out.is_open()) {
+		accepted = true;
+		out.write((char*)&accepted, sizeof(bool));
+		out.write((char*)&eulaSize, sizeof(int));
+		out.write(eula_string, eulaSize);
+		out.close();
 	}
-	else return -2;
 }
-int main() {
-	printf("Thank you for installing King Frederick's Battle Royale by Stephen Verderame \n");
-	Sleep(2000);
-	printf("I hope it will provide you with at least 10 minutes of fun! \n");
-	Sleep(1500);
-	printf("Installation start \n");
-	struct stat exists;
-	char dirPath[MAX_PATH];
-	sprintf_s(dirPath, MAX_PATH, "%s\\Documents\\KFBR", getenv("USERPROFILE"));
-	if (stat(dirPath, &exists) == 0) {
-		//if already downloaded;
-		printf("Deleting previous install \n");
-		removeDirectory("KFBR/Assets/fonts");
-		removeDirectory("KFBR/Assets/skybox");
-		removeDirectory("KFBR/Assets/sounds");
-		removeDirectory("KFBR/Assets/well");
-		removeDirectory("KFBR/Assets");
-		removeDirectory("KFBR");
-		printf("Removed old data! \n");
+HBITMAP image = NULL;
+Page * agreePage;
+Page * homePage;
+Page * playPage;
+Page * settingsPage;
+Page * controlsPage;
+MainPage * main;
+char characterSet[] = "abcdefghijklmnopqrstuvwxyz1234567890";
+void saveSettings() {
+	std::ofstream out;
+	out.open("settings.set", std::ios::binary);
+	if (out.is_open()) {
+		int graphics = ((Radiobutton*)settingsPage->getControl(1))->getChecked();
+		out.write((char*)&graphics, sizeof(int));
+		bool fullscreen = ((Checkbox*)settingsPage->getControl(3))->isChecked();
+		out.write((char*)&fullscreen, sizeof(bool));
+		std::string res;
+		int index = ((Combobox*)settingsPage->getControl(5))->getSelected(res);
+		int resX = atoi(res.substr(0, res.find(' ')).c_str());
+		int resY = atoi(res.substr(res.find('x') + 2).c_str());
+		out.write((char*)&index, sizeof(int));
+		out.write((char*)&resX, sizeof(int));
+		out.write((char*)&resY, sizeof(int));
+		int pos = ((Slider*)settingsPage->getControl(8))->getPos();
+		float volume = pos / 10.0f;
+		out.write((char*)&volume, sizeof(float));
+		out.close();
 	}
-	struct stat safety;
-	if (stat(dirPath, &safety) == 0) {
-		char assetsPath[MAX_PATH];
-		sprintf_s(assetsPath, MAX_PATH, "%s\\Assets", dirPath);
-		if (stat(assetsPath, &safety) == 0) {
-			RemoveDirectory(assetsPath);
-		}
-		RemoveDirectory(dirPath);
+}
+void defaultSettings() {
+	std::ofstream out;
+	out.open("settings.set", std::ios::binary);
+	if (out.is_open()) {
+		int graphics = 2;
+		out.write((char*)&graphics, sizeof(int));
+		bool fullscreen = 0;
+		out.write((char*)&fullscreen, sizeof(bool));
+		std::string res = "1920 x 1080";
+		int index = 3;
+		int resX = atoi(res.substr(0, res.find(' ')).c_str());
+		int resY = atoi(res.substr(res.find('x') + 2).c_str());
+		out.write((char*)&index, sizeof(int));
+		out.write((char*)&resX, sizeof(int));
+		out.write((char*)&resY, sizeof(int));
+		int pos = 10;
+		float volume = pos / 10.0f;
+		out.write((char*)&volume, sizeof(float));
+		out.close();
 	}
-	char url[] = "https://dl.dropboxusercontent.com/s/cutdr5fss2oorme/KFBR.zip?dl=0";
+}
+void readSettings() {
+	std::ifstream in;
+	in.open("settings.set", std::ios::binary);
+	if (in.is_open()) {
+		int graphics;
+		in.read((char*)&graphics, sizeof(int));
+		((Radiobutton*)settingsPage->getControl(1))->setCheck(graphics, true);
+		bool fullscreen;
+		in.read((char*)&fullscreen, sizeof(bool));
+		((Checkbox*)settingsPage->getControl(3))->setCheck(fullscreen);
+		int index, buf1, buf2;
+		in.read((char*)&index, sizeof(int));
+		in.read((char*)&buf1, sizeof(int));
+		in.read((char*)&buf2, sizeof(int));
+		((Combobox*)settingsPage->getControl(5))->selectChoice(index);
+		float volume;
+		in.read((char*)&volume, sizeof(float));
+		int pos = volume * 10.0f;
+		((Slider*)settingsPage->getControl(8))->setPos(pos);
+		in.close();
+
+
+	}
+}
+void checkUpdate() {
+	const char url[] = "https://dl.dropboxusercontent.com/s/62uygkt2q703j8r/version.txt?dl=0";
+	DeleteUrlCacheEntry(url);
 	char downloadPath[MAX_PATH];
-	sprintf_s(downloadPath, MAX_PATH, "%s\\Downloads\\Frederick.zip", getenv("USERPROFILE"));
-	if (stat(downloadPath, &safety) == 0) {
+	sprintf_s(downloadPath, MAX_PATH, "%s\\Documents\\KFBR\\version.txt", getenv("USERPROFILE"));
+	struct stat exists;
+	if (stat(downloadPath, &exists) == 0) {
 		remove(downloadPath);
 	}
-	printf("Downloading files. This may take a while. \n");
-	DeleteUrlCacheEntry(url);
-	HRESULT check = URLDownloadToFile(NULL, url, downloadPath, 0, NULL);
-	if (check == S_OK) printf("Downloaded files! \n");
-	else printf("Download failed \n");
-	printf("Decompressing files. This may take a while \n");
-	char folderPath[MAX_PATH];
-	sprintf_s(folderPath, MAX_PATH, "%s\\Documents", getenv("USERPROFILE"));
-	CComBSTR file(downloadPath);
-	CComBSTR folder(folderPath);
-	if (unzipTo(file, folder) == 0) printf("Unzip success! \n");
-	else printf("Unzip failed! \n");
-
-
-	char exePath[MAX_PATH];
-	sprintf_s(exePath, MAX_PATH, "%s\\Documents\\KFBR\\Launcher.exe", getenv("USERPROFILE"));
-	char lnkPath[MAX_PATH];
-	sprintf_s(lnkPath, MAX_PATH, "%s\\Desktop\\KFBR.lnk", getenv("USERPROFILE"));
-	char icoPath[MAX_PATH];
-	sprintf_s(icoPath, MAX_PATH, "%s\\Documents\\KFBR\\bow.ico", getenv("USERPROFILE"));
-	CoInitialize(NULL);
-	HRESULT res;
-	IShellLink * psl;
-	res = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl);
+	HRESULT res = URLDownloadToFile(NULL, url, downloadPath, 0, NULL);
 	if (SUCCEEDED(res)) {
-		IPersistFile * ppf;
-		psl->SetPath(exePath);
-		psl->SetWorkingDirectory(dirPath);
-		psl->SetIconLocation(icoPath, 0);
-		res = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
-		if (SUCCEEDED(res)) {
-			WCHAR formattedPath[MAX_PATH];
-			MultiByteToWideChar(CP_ACP, 0, lnkPath, -1, formattedPath, MAX_PATH);
-			ppf->Save(formattedPath, TRUE);
-			ppf->Release();
-			psl->Release();
-			CoUninitialize();
-			printf("Desktop shortcut created \n");
-		}
-		else {
-			printf("Couldn't create shortcut \n");
-			psl->Release();
-			CoUninitialize();
+		std::ifstream in;
+		in.open(downloadPath);
+		if (in.is_open()) {
+			std::string latest;
+			std::getline(in, latest);
+			in.close();
+			double latestVersion = std::stod(latest);
+			if (latestVersion > VERSION) {
+				int response = MessageBox(NULL, "A new update is avaliable. \nWould you like to download it now?", "KFBR", MB_YESNO | MB_ICONQUESTION);
+				if (response == IDYES) {
+					CoInitialize(NULL);
+					ShellExecute(NULL, 0, "https://dl.dropboxusercontent.com/s/pv1tedrmg6r5twb/Installer.exe?dl=0", 0, 0, SW_SHOW);
+					CoUninitialize();
+				}
+			}
 		}
 	}
-	else printf("Couldn't create shortcut. Could not instantiate \n");
+}
+char ipCharSet[] = "1234567890.";
+void playGame() {
+	struct stat buffer;
+	if (stat("settings.set", &buffer)) {
+		defaultSettings();
+	}
+	std::ofstream out;
+	out.open("login.set", std::ios::binary);
+	if (out.is_open()) {
+		std::string username = ((TextField*)playPage->getControl(1))->getText();
+		std::string ip = ((TextField*)playPage->getControl(3))->getText();
+		if (username.size() == 0) {
+			MessageBox(NULL, "You must enter a username!", "KFBR", MB_OK | MB_ICONERROR);
+			return;
+		}
+		if (ip.size() == 0) {
+			MessageBox(NULL, "You must enter an ip!", "KFBR", MB_OK | MB_ICONERROR);
+			return;
+		}
+		if (ip == "offline" || ip == "localhost")
+			ip = "127.0.0.1";
+		else if (ip == "std_server")
+			ip = "67.85.97.119";
+		bool valid = true;
+		int dots = 0;
+		for (char c : ip) {
+			bool inset = false;
+			for (char letter : ipCharSet) {
+				if (c == letter) {
+					inset = true;
+					if (c == '.') dots++;
+					break;
+				}
+			}
+			if (!inset) valid = false;
+		}
+		if (!valid || dots != 3) {
+			MessageBox(NULL, "You must enter a valid ip!", "KFBR", MB_OK | MB_ICONERROR);
+			((TextField*)playPage->getControl(3))->setText("");
+			return;
+		}
+		for (char c : username) {
+			bool inSet = false;
+			for (char letter : characterSet) {
+				if (tolower(c) == letter) { inSet = true; break; }
+			}
+			if (!inSet) {
+				MessageBox(NULL, "Username must be alphanumeric", "KFBR", MB_OK | MB_ICONERROR);
+				((TextField*)playPage->getControl(1))->setText("");
+				return;
+			}
+		}
+		int userSize = username.size();
+		int ipSize = ip.size();
+		out.write((char*)&userSize, sizeof(int));
+		out.write((char*)username.c_str(), userSize);
+		out.write((char*)&ipSize, sizeof(int));
+		out.write((char*)ip.c_str(), ipSize);
+		out.close();
 
-	printf("Thank you for installing KFBR. Main directory in %s\\Documents\\KFBR \n", getenv("USERPROFILE"));
-	printf("If there were any issues with this installation contact me immediatly \n");
-	printf("Press any key to quit... \n");
-	getchar();
+		STARTUPINFO info;
+		PROCESS_INFORMATION pinfo;
+		SECURITY_ATTRIBUTES attr;
+		ZeroMemory(&attr, sizeof(SECURITY_ATTRIBUTES));
+		attr.bInheritHandle = FALSE;
+		attr.nLength = sizeof(SECURITY_ATTRIBUTES);
+		attr.lpSecurityDescriptor = NULL;
+		ZeroMemory(&info, sizeof(STARTUPINFO));
+		info.cb = sizeof(STARTUPINFO);
+		ZeroMemory(&pinfo, sizeof(PROCESS_INFORMATION));
+		char file[MAX_PATH];
+		sprintf_s(file, MAX_PATH, "%s\\Documents\\KFBR\\3DGame.exe", getenv("USERPROFILE"));
+		CreateProcess(file, NULL, &attr, &attr, FALSE, NULL, NULL, NULL, &info, &pinfo);
+	}
+}
+LRESULT CALLBACK WindowProc(HWND handle, UINT message, WPARAM wParam, LPARAM lParam) {
+	int i = 2;
+	switch (message) {
+	case WM_CREATE:
+		image = (HBITMAP)LoadImage(NULL, "bannerSmall.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
+		gui::GUI::bindWindow(handle);
+		agreePage = new Page("agreePage", { new Button("agreeBtn", 280, 700, 50, 20, "Agree", []() {agreeEula(); main->navigateTo(1); }),  new TextField("eulaTxt", 10, 300, 500, 300, eula_string, false, GUI_TEXTFIELD_VERT_SCROLL and GUI_TEXTFIELD_HOR_SCROLL), new Label("eulaLbl", 10, 250, "Please agree to the eula:") });
+		homePage = new Page("homePage", { new Button("playBtn", 200, 300, 200, 50, "Play", []() {main->navigateTo(2); }), new Button("settingsBtn", 200, 400, 200, 50, "Settings", []() {main->navigateTo(3); }), new Button(
+			"controlsBtn", 200, 500, 200, 50, "Controls", []() {main->navigateTo(4); }), new Label("nameLbl", 10, 700, "© Stephen Verderame 2017") });
+		playPage = new Page("playPage", { new Label("userLbl", 200, 250, "Username:"), new TextField("userField", 200, 300, 200, 20, WS_BORDER), new Label("ipLbl", 200, 450, "Ip address:"), new TextField("ipField", 200, 500, 200, 20, WS_BORDER),
+			new Button("joinBtn", 200, 700, 200, 50, "Join", playGame), new Button("backBtn", 20, 300, 100, 20, "Back", []() {main->navigateTo(1); }) });
+		settingsPage = new Page("settingsPage", { new Label("gLabel", 10, 250, "Graphics:"), new Radiobutton("graphicsRadio", 10, 300, {"Low", "Medium", "High"}), new Button("backBtn", 10, 700, 50, 25, "Back", []() {main->navigateTo(1); }),
+			new Checkbox("fullCheck", 300, 300, "Fullscreen"), new Label("resLbl", 300, 370, "Resolution: "), new Combobox("resBox", 300, 400, {"1152 x 648", "1280 x 720", "1366 x 768", "1920 x 1080", "2560 x 1440", "3840 x 2160"}, 100, 3),
+			new Button("saveBtn", 250, 700, 100, 50, "Save", []() {saveSettings(); main->navigateTo(1); }), new Label("musLbl", 300, 450, "Music Volume: "), new Slider("musControl", 300, 500, 150, 40, 0, 10) });
+		controlsPage = new Page("controlsPage", { new Button("backBtn", 280, 700, 50, 20, "Back", []() {main->navigateTo(1); }), new TextField("controlsTxt", 10, 300, 500, 400, GUI::textFieldLoadFromFile("controls.txt"), false, GUI_TEXTFIELD_VERT_SCROLL and GUI_TEXTFIELD_HOR_SCROLL) });
+		main = new MainPage({ agreePage, homePage, playPage, settingsPage, controlsPage });
+		readSettings();
+		if (!accepted) {
+			main->navigateTo("agreePage");
+		}
+		else {
+			main->navigateTo("homePage");
+		}
+		break;
+	case WM_DESTROY:
+		DeleteObject(image);
+		PostQuitMessage(0);
+		return 0;
+	case WM_PAINT:
+	{
+		BITMAP img;
+		PAINTSTRUCT paint;
+		ZeroMemory(&paint, sizeof(PAINTSTRUCT));
+		ZeroMemory(&img, sizeof(BITMAP));
+		HDC hdc = BeginPaint(handle, &paint);
+		HDC hdcMem = CreateCompatibleDC(hdc);
+		HBITMAP oldImg = (HBITMAP)SelectObject(hdcMem, image);
+		GetObject(image, sizeof(img), &img);
+		BitBlt(hdc, 0, 0, img.bmWidth, img.bmHeight, hdcMem, 0, 0, SRCCOPY);
+		SelectObject(hdcMem, oldImg);
+		DeleteDC(hdcMem);
+		EndPaint(handle, &paint);
+	}
+	}
+	return DefWindowProc(handle, message, wParam, lParam);
+}
+int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+	HWND window;
+	WNDCLASSEX wc;
+	ZeroMemory(&wc, sizeof(WNDCLASSEX));
+	wc.cbSize = sizeof(WNDCLASSEX);
+	wc.style = CS_HREDRAW | CS_VREDRAW;
+	wc.lpfnWndProc = WindowProc;
+	wc.hInstance = hInstance;
+	wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+	wc.hbrBackground = (HBRUSH)COLOR_WINDOW;
+	wc.lpszClassName = "KFBRLauncher";
+	RECT size = { 0, 0, 600, 800 };
+	AdjustWindowRect(&size, WS_OVERLAPPED, FALSE);
+
+	eula();
+	checkUpdate();
+
+	RegisterClassEx(&wc);
+	window = CreateWindowEx(NULL, "KFBRLauncher", "King Frederick's Battle Royale", WS_OVERLAPPEDWINDOW exclude WS_THICKFRAME exclude WS_MAXIMIZEBOX, 300, 300, size.right - size.left, size.bottom - size.top, NULL, NULL, hInstance, NULL);
+	ShowWindow(window, nCmdShow);
+
+	MSG msg;
+	while (true) {
+		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+			if (msg.message == WM_QUIT) break;
+			main->handleMessage(&msg);
+		}
+	}
+	GUI_CLEANUP(main);
+	return 0;
 }
