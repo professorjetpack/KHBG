@@ -777,7 +777,6 @@ namespace Game {
 			leaderName = lastLeaderName;
 		}
 		std::vector<Arrow> getServerArrows() {
-			if (!connected) return std::vector<Arrow>();
 			if (UNLOCKED(serverArrowLock)) {
 				serverArrowLock = true;
 				lastServerArrows.erase(lastServerArrows.begin(), lastServerArrows.end());

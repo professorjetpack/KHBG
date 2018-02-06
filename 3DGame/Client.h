@@ -89,6 +89,17 @@ namespace client {
 		WSACleanup();
 		return SCK_CLOSED;
 	}
+	inline void cpy(char * dest, int source) {
+		/*		*dest = source >> 24;
+		*(dest + 1) = source >> 16;
+		*(dest + 2) = source >> 8;
+		*(dest + 3) = source;*/
+		*dest = source & 0x00FFFFFF;
+		*(dest + 1) = source & 0xFF00FFFF;
+		*(dest + 2) = source & 0xFFFF00FF;
+		*(dest + 3) = source & 0xFFFFFF00;
+
+	}
 	void shutdown() {
 		if(!closed) disconnectClient(sck_connection);
 	}
@@ -370,20 +381,25 @@ namespace client {
 	int sendPlayerData(position pos, std::vector<arrow_packet> & arrows, bool died = false, arrow_packet deathArrow = {}) {
 		if (closed) return SCK_CLOSED;
 		if (!FD_ISSET(sck_connection, &write)) return SCK_FD_NOT_SET;
-		int buffSize = 21 + (arrows.size() * 42) + 1 + (died * 4);
+		int buffSize = 25 + (arrows.size() * 42) + 1 + (died * 4);
 		char * buff = new char[buffSize];
 		memset(buff, 0, buffSize);
 		printf("Sending data of size: %d \n", buffSize);
 		char * buffer = buff;
-		memcpy_s(buffer, 21, &pos.x, 4);
-		memcpy_s(buffer + 4, 17, &pos.y, 4);
-		memcpy_s(buffer + 8, 13, &pos.z, 4);
-		memcpy_s(buffer + 12, 9, &pos.yaw, 4);
-		memcpy_s(buffer + 16, 5, &pos.pitch, 4);
+		memcpy_s(buffer, 24, &pos.x, 4);
+		memcpy_s(buffer + 4, 20, &pos.y, 4);
+		memcpy_s(buffer + 8, 16, &pos.z, 4);
+		memcpy_s(buffer + 12, 12, &pos.yaw, 4);
+		memcpy_s(buffer + 16, 8, &pos.pitch, 4);
 		memcpy_s(buffer + 20, 1, &pos.movement, 1);
+		printf("Player: \n");
+		printf("X: %f Y: %f Z: %f \n", pos.x, pos.y, pos.z);
+		printf("Yaw: %f Pitch: %f \n", pos.yaw, pos.pitch);
+		printf("Movement byte: %d \n", pos.movement);
 		int arrowsSize = arrows.size();
 		printf("Sending arrows size %d \n", arrowsSize);
 		memcpy_s(buffer + 21, sizeof(int), &arrowsSize, sizeof(int)); //issue here
+//		cpy(buffer + 24, arrowsSize);
 		buffer += 25;
 		for (int i = 0; i < arrows.size(); i++) {
 			arrow_packet pack = arrows[i];
