@@ -19,3 +19,6 @@ Furthermore, an Installer was developed, which used GDI to create a nice little 
 ##
 As another note, this project was developed before I knew much about design patterns or good programming practices.
 **View Code at your own risk (lol)**
+
+### Demo
+[![Watch Video](https://docs.google.com/uc?export=download&id=1xc9K0BE61YSBoXrqk5IrwAjUsTk8Ml_M)](https://www.youtube.com/watch?v=TSqRhT19VRU)
